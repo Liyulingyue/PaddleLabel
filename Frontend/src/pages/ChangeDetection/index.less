@@ -1,0 +1,45 @@
+@import (reference) '~antd/es/style/themes/index';
+
+.segment {
+  position: relative;
+  display: flex;
+  background-color: #fafafa;
+
+  .mainStage {
+    width: 100%;
+    background-color: gray;
+
+    .draw {
+      height: 100% - 4.85rem;
+
+      .halfMap {
+        float: left;
+        width: 49.5%;
+        height: 100%;
+        // overflow-x: scroll;
+      }
+      .interval {
+        float: left;
+        width: 1%;
+        height: 100%;
+      }
+    }
+    .pblock {
+      height: 2.55rem;
+      background-color: white;
+
+      .progress {
+        width: 15rem;
+        margin: 0 auto;
+        // margin-top: 0.5rem;
+      }
+    }
+  }
+  .rightSideBar {
+    width: 330px;
+    border-left: 4px solid #ddd;
+    .determinOutline {
+      padding: 20px 15px;
+    }
+  }
+}
