@@ -1,0 +1,6 @@
+FROM node:16
+
+WORKDIR /usr/app
+
+# First time please override cli command to `yarn` to init node_modules.
+CMD ["npm", "start"]
