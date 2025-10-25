@@ -35,7 +35,7 @@ logger = logging.getLogger("paddlelabel")
 
 def import_dataset(project, data_dir=None, label_format=None, request_json={}):
     data_dir = project.data_dir if data_dir is None else data_dir
-    logger.info(f"importing dataset from {data_dir}")
+    print(f"[DEBUG] importing dataset from {data_dir}")
     task_category = TaskCategory._get(task_category_id=project.task_category_id)
 
     assert task_category is not None, f"invalid task category id {project.task_category_id}"

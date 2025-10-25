@@ -14,7 +14,7 @@ const Component: React.FC<PPColorBallProps> = (props) => {
   const [color, setColor] = useState(props.color || '#FFF');
   useEffect(() => {
     setColor(props.color || '#FFF');
-  }, [props]);
+  }, [props.color]);
   if (props.changeable) {
     return (
       <Popover

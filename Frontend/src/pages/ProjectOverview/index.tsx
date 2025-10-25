@@ -17,13 +17,13 @@ const loading =
 
 const TaskList: React.FC = () => {
   const intl = IntlInitJsx('pages.projectOverview');
-  const task = TaskUtils(useState);
+  const task = TaskUtils(useState, { annotation: undefined, push: false });
   const project = ProjectUtils(useState);
   const [updateTable, setUpdateTable] = useState<number>(0);
-  const sets = {
-    '0': intl('train', 'global.set'),
-    '1': intl('val', 'global.set'),
-    '2': intl('test', 'global.set'),
+  const sets: { [key: number]: React.ReactNode } = {
+    0: intl('train', 'global.set'),
+    1: intl('val', 'global.set'),
+    2: intl('test', 'global.set'),
   };
   const baseUrl = localStorage.getItem('basePath');
   const projectId = serviceUtils.getQueryVariable('projectId');
@@ -39,8 +39,8 @@ const TaskList: React.FC = () => {
       key: 'taskId',
       width: '25%',
       align: 'center',
-      render: (text: string) => <>{text}</>,
-      sorter: (a, b) => a.taskId - b.taskId,
+      render: (text?: number) => <>{text}</>,
+      sorter: (a, b) => (a.taskId ?? 0) - (b.taskId ?? 0),
     },
     {
       title: intl('annotationCount'),
@@ -48,8 +48,8 @@ const TaskList: React.FC = () => {
       key: 'taskId',
       width: '25%',
       align: 'center',
-      render: (anns: list) => <>{anns.length}</>,
-      sorter: (a, b) => a.annotations.length - b.annotations.length,
+      render: (anns?: any[]) => <>{anns ? anns.length : 0}</>,
+      sorter: (a, b) => (a.annotations?.length ?? 0) - (b.annotations?.length ?? 0),
     },
     {
       title: intl('split'),
@@ -57,8 +57,8 @@ const TaskList: React.FC = () => {
       key: 'taskId',
       width: '25%',
       align: 'center',
-      render: (setIdx: string) => <>{sets[setIdx]}</>,
-      sorter: (a, b) => a.set - b.set,
+      render: (setIdx?: number) => <>{sets[setIdx ?? 0]}</>,
+      sorter: (a, b) => (a.set ?? 0) - (b.set ?? 0),
     },
     {
       title: intl('image'),
@@ -66,33 +66,46 @@ const TaskList: React.FC = () => {
       key: 'taskId',
       width: '25%',
       align: 'center',
-      render: (paths: string) => (
+      render: (paths?: string[]) => (
         <Image
-          src={`${baseUrl}${paths[0]}`}
+          src={paths && paths[0] ? `${baseUrl}${paths[0]}` : loading}
           height={40}
-          // loading={'lazy'}
-          onError={(thisImage) => {
-            thisImage.target.src = loading;
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.src = loading;
             setTimeout(() => {
-              thisImage.target.src = `${baseUrl}${paths[0]}reload`;
+              if (paths && paths[0]) target.src = `${baseUrl}${paths[0]}reload`;
             }, 1000);
           }}
         />
       ),
-      sorter: (a, b) => a.dataPaths[0].split('sault')[0] > b.dataPaths[0].split('sault')[0],
+      sorter: (a, b) => {
+        const aVal = a.dataPaths && a.dataPaths[0] ? a.dataPaths[0].split('sault')[0] : '';
+        const bVal = b.dataPaths && b.dataPaths[0] ? b.dataPaths[0].split('sault')[0] : '';
+        return aVal.localeCompare(bVal);
+      },
     },
     {
       dataIndex: 'taskId',
       key: 'taskId',
       align: 'center',
-      render: (taskId: string) => (
+      render: (taskId?: number) => (
         <Button
           type="primary"
           onClick={() => {
-            localStorage.setItem('currTaskId', taskId);
-            history.push(
-              `/${camel2snake(project.curr.taskCategory.name)}?projectId=${project.curr.projectId}`,
-            );
+            if (
+              project.curr &&
+              project.curr.taskCategory &&
+              project.curr.taskCategory.name &&
+              project.curr.projectId
+            ) {
+              if (taskId !== undefined) localStorage.setItem('currTaskId', String(taskId));
+              history.push(
+                `/${camel2snake(project.curr.taskCategory.name)}?projectId=${project.curr.projectId}`,
+              );
+            } else {
+              message.error('项目信息未加载完成，无法跳转');
+            }
           }}
         >
           {intl('label')}
@@ -102,14 +115,17 @@ const TaskList: React.FC = () => {
   ];
 
   useEffect(() => {
-    project.getCurr(projectId);
-    task.getAll(projectId).then(() => {});
+    if (projectId) {
+      project.getCurr(Number(projectId));
+      task.getAll(Number(projectId)).then(() => {});
+    }
   }, []);
 
   // ensure projectid
   if (!projectId) {
-    message.error('No valid project id');
-    history.push('/');
+  message.error('No valid project id');
+  history.push('/');
+  return null;
   }
   return (
     <PPContainer>
@@ -117,9 +133,18 @@ const TaskList: React.FC = () => {
         <Button
           type="primary"
           onClick={() => {
-            history.push(
-              `/${camel2snake(project.curr.taskCategory.name)}?projectId=${project.curr.projectId}`,
-            );
+            if (
+              project.curr &&
+              project.curr.taskCategory &&
+              project.curr.taskCategory.name &&
+              project.curr.projectId
+            ) {
+              history.push(
+                `/${camel2snake(project.curr.taskCategory.name)}?projectId=${project.curr.projectId}`,
+              );
+            } else {
+              message.error('项目信息未加载完成，无法跳转');
+            }
           }}
           hidden={task.all?.length == 0}
         >
@@ -129,11 +154,20 @@ const TaskList: React.FC = () => {
         <Button
           type="primary"
           onClick={() => {
-            history.push(
-              `/project_detail?taskCategory=${snake2camel(
-                project.curr.taskCategory.name,
-              )}&projectId=${project.curr.projectId}`,
-            );
+            if (
+              project.curr &&
+              project.curr.taskCategory &&
+              project.curr.taskCategory.name &&
+              project.curr.projectId
+            ) {
+              history.push(
+                `/project_detail?taskCategory=${snake2camel(
+                  project.curr.taskCategory.name,
+                )}&projectId=${project.curr.projectId}`,
+              );
+            } else {
+              message.error('项目信息未加载完成，无法跳转');
+            }
           }}
         >
           {intl('projectSettings')}
@@ -142,59 +176,44 @@ const TaskList: React.FC = () => {
         <PPSplitDatasetModal
           project={project}
           visible={task.all?.length != 0}
-          onFinish={() => task.getAll(project.curr.projectId)}
+          onFinish={() => {
+            if (project.curr?.projectId !== undefined) {
+              task.getAll(project.curr.projectId);
+            }
+          }}
         />
         <PPExportModal project={project.curr} visible={task.all?.length != 0} />
         <PPImportModal
           project={project.curr}
           onFinish={() => {
-            task.getAll(project.curr.projectId);
-            setUpdateTable(updateTable + 1);
+            if (project.curr?.projectId !== undefined) {
+              task.getAll(project.curr.projectId);
+              setUpdateTable(updateTable + 1);
+            }
           }}
           visible={task.all?.length != 0}
         />
-        {project?.curr?.taskCategory?.name === 'detection' ||
-        project?.curr?.taskCategory?.name === 'classification' ||
-        project?.curr?.taskCategory?.name === 'optical_character_recognition' ? (
-          <Button
-            type="primary"
-            onClick={() => {
-              let path = '/project_ai';
-              if (project?.curr?.taskCategory?.name === 'optical_character_recognition') {
-                path = '/project_ocr_ai';
-              }
-              history.push(
-                `${path}?taskCategory=${snake2camel(project.curr.taskCategory.name)}&projectId=${
-                  project.curr.projectId
-                }`,
-              );
-            }}
-          >
-            {intl('autoInferenceSettings')}
-          </Button>
-        ) : null}
+        {/* 自动推理设置按钮已移除 */}
       </PPBlock>
       <PPBlock title={intl('tasks')}>
         {intl('taskCount')}
-        {': ' + task.all?.length}
+        {': ' + (task.all?.length ?? 0)}
         <br />
-        {(() => {
-          if (task.all?.length == 0)
-            return (
-              <PPImportModal
-                project={project.curr}
-                onFinish={() => {
-                  task.getAll(project.curr.projectId);
-                  setUpdateTable(updateTable + 1);
-                }}
-              />
-            );
-          return (
-            <span id={updateTable}>
-              <Table columns={columns} dataSource={[...toDict(task.all)]} onChange={onChange} />{' '}
-            </span>
-          );
-        })()}
+        {task.all?.length === 0 ? (
+          <PPImportModal
+            project={project.curr}
+            onFinish={() => {
+              if (project.curr?.projectId !== undefined) {
+                task.getAll(project.curr.projectId);
+                setUpdateTable(updateTable + 1);
+              }
+            }}
+          />
+        ) : (
+          <span id={String(updateTable)}>
+            <Table columns={columns} dataSource={toDict(task.all)} onChange={onChange} />
+          </span>
+        )}
       </PPBlock>
       <div data-test-id="test-overview" data-task-count={task.all?.length} />
     </PPContainer>

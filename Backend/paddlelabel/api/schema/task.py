@@ -15,9 +15,9 @@ class TaskSchema(BaseSchema):
         model = Task
 
     # project = Nested("ProjectSchema")
-    annotations = fields.List(Nested("AnnotationSchema"), exclude=("task",))
+    annotations = fields.List(Nested("AnnotationSchema"))
     data_paths = fields.List(fields.String())
-    # datas = fields.List(Nested("DataSchema"), exclude=("task",))
+    # datas = fields.List(Nested("DataSchema", exclude=("task",)))
 
     # # TODO: confirm data['result'] dont cause trouble
     @pre_dump

@@ -32,7 +32,8 @@ npm run dev
 cd MLBackend
 # 建议使用虚拟环境
 pip install -r requirements.txt
-python app.py
+pip install paddlepaddle
+python -m paddlelabel_ml
 ```
 
 ---

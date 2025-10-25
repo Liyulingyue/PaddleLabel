@@ -4,11 +4,12 @@ import React from 'react';
 import styles from './index.less';
 
 export type PPCardProps = {
-  title?: string | React.Component;
+  title?: React.ReactNode;
   style?: React.CSSProperties;
   innerStyle?: React.CSSProperties;
   reset?: () => void;
   hidden?: boolean;
+  children?: React.ReactNode;
 };
 
 const PPBlock: React.FC<PPCardProps> = (props) => {

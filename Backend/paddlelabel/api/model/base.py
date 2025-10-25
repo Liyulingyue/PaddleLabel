@@ -21,7 +21,6 @@ class BaseModel(db.Model):
     _nested = ["project"]
 
     @classmethod
-    @property
     def _cols(cls):
         return [c.key for c in cls.__table__.columns]
 
@@ -62,7 +61,7 @@ class BaseModel(db.Model):
     def _get(cls, many: bool = False, **kwargs):
         if pyVerGt():  # skip check for py < 3.9
             for key in kwargs.keys():
-                if key not in cls._cols:
+                if key not in cls._cols():
                     raise AttributeError(f"Model {cls.__tablename__} don't have attribute {key}")
 
         conditions = {}

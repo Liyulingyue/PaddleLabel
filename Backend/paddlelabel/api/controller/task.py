@@ -33,9 +33,10 @@ def get_stat_by_project(project_id):
     return res, 200, res
 
 
-def set_all_by_project(project_id):
-    if "data_predicted" in connexion.request.json.keys():
+async def set_all_by_project(project_id):
+    data = await connexion.request.json()
+    if "data_predicted" in data.keys():
         for task in Task._get(project_id=project_id, many=True):
-            for data in task.datas:
-                data.predicted = connexion.request.json["data_predicted"]
+            for d in task.datas:
+                d.predicted = data["data_predicted"]
     db.session.commit()

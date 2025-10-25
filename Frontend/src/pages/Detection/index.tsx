@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useUpdateEffect } from 'ahooks';
-import { Spin, message } from 'antd';
+import { Spin, message, Input, Tooltip, Switch, Select, Upload } from 'antd';
 import { history, useModel } from 'umi';
 import styles from './index.less';
 import PPLabelPageContainer from '@/components/PPLabelPage/PPLabelPageContainer';
@@ -29,7 +29,26 @@ const Page = () => {
   const [isClick, setisClick] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const { interactorData, setInteractorData } = useModel('InteractorData');
-  const [threshold, setThreshold] = useState(0.9);
+  const [threshold, setThreshold] = useState<number>(0.9);
+  const [mlBackendUrl, setMlBackendUrl] = useState<string>('');
+  const [inferenceEnabled, setInferenceEnabled] = useState<boolean>(false);
+  const [showInferConfig, setShowInferConfig] = useState(false);
+  const [selectedService, setSelectedService] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [uploadedModelFile, setUploadedModelFile] = useState<File | null>(null);
+
+  // 服务选项
+  const serviceOptions = [
+    { value: 'custom', label: '自定义服务' },
+    { value: 'preset', label: '预设模型服务' },
+  ];
+
+  // 预设模型选项
+  const presetModelOptions = [
+    { value: 'picodet', label: 'PicoDet' },
+    { value: 'yolov3', label: 'YOLOv3' },
+    { value: 'ssd', label: 'SSD' },
+  ];
   const [isLoad, setIsLoad] = useState<boolean>(false);
   const [otherSetting, setotherSetting] = useState();
   const [flags, setflags] = useState<boolean>(false);
@@ -64,6 +83,13 @@ const Page = () => {
       },
     },
   );
+
+  // 当 project.curr 变化时自动同步 mlBackendUrl
+  useEffect(() => {
+    if (project.curr?.otherSettings?.mlBackendUrl) {
+      setMlBackendUrl(project.curr.otherSettings.mlBackendUrl);
+    }
+  }, [project.curr?.otherSettings?.mlBackendUrl]);
   const [image] = useImage(data.imgSrc || '', 'anonymous');
   function preCurrLabelUnset() {
     annotation.setCurr(undefined);
@@ -295,37 +321,29 @@ const Page = () => {
   }, [isClick]);
 
   useUpdateEffect(() => {
-    // debugger;
     if (isLoad && project.curr?.otherSettings?.labelMapping && isLoading) {
-      // debugger;
       if (model.loading) {
         message.error(tbIntl('modelLoading'));
         return;
       }
-      const settings = project.curr?.otherSettings ? project.curr.otherSettings : {};
-      model.setMlBackendUrl(settings?.mlBackendUrl || '');
+      const settings = project.curr?.otherSettings || {};
+      if (settings.mlBackendUrl) model.setMlBackendUrl(settings.mlBackendUrl);
       model.setLoading(true);
-      model.load(settings?.modelName).then(
-        (res: any) => {
-          // message.info(intl('modelLoaded'));
-          // debugger;
-          console.log('ress', res);
-
-          model.setLoading(false);
-          if (isLoading) {
-            // debugger;
-            setIsLoading(false);
-          }
-        },
-        () => {
-          model.setLoading(false);
-          if (!isLoading) {
-            setIsLoading(true);
-          }
-        },
-      );
+      if (settings.modelName) {
+        model.load(settings.modelName).then(
+          (res: any) => {
+            console.log('ress', res);
+            model.setLoading(false);
+            if (isLoading) setIsLoading(false);
+          },
+          () => {
+            model.setLoading(false);
+            if (!isLoading) setIsLoading(true);
+          },
+        );
+      }
     } else {
-      setotherSetting(project.curr?.otherSettings);
+      setotherSetting(project.curr?.otherSettings ?? undefined);
     }
   }, [isLoad, project.curr?.otherSettings]);
   useUpdateEffect(() => {
@@ -747,6 +765,180 @@ const Page = () => {
         </Spin>
       </div>
       <PPToolBar disLoc="right">
+        {/* 推理配置悬停栏 */}
+        <div style={{ position: 'relative', display: 'inline-block', marginBottom: 8 }}>
+          <Tooltip
+            title={
+              <div style={{ minWidth: 220, backgroundColor: 'white', padding: '8px', color: 'black' }}>
+                <div style={{ marginBottom: 8 }}>
+                  <span>开启推理：</span>
+                  <Switch
+                    checked={inferenceEnabled}
+                    onChange={setInferenceEnabled}
+                    size="small"
+                  />
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <span>选择服务：</span>
+                  <Select
+                    size="small"
+                    value={selectedService}
+                    onChange={(value) => {
+                      setSelectedService(value);
+                      // 切换服务类型时重置相关状态
+                      setSelectedModel('');
+                      setUploadedModelFile(null);
+                      if (value === 'custom') {
+                        setMlBackendUrl('');
+                      }
+                    }}
+                    placeholder="请选择服务"
+                    disabled={!inferenceEnabled}
+                    style={{ width: '100%' }}
+                    dropdownStyle={{ zIndex: 9999 }}
+                    getPopupContainer={(triggerNode) => triggerNode.parentNode}
+                  >
+                    {serviceOptions.map(option => (
+                      <Select.Option key={option.value} value={option.value}>
+                        {option.label}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </div>
+                {selectedService === 'custom' && (
+                  <div style={{ marginBottom: 8 }}>
+                    <span>推理服务地址：</span>
+                    <Input
+                      size="small"
+                      value={mlBackendUrl}
+                      onChange={e => setMlBackendUrl(e.target.value)}
+                      placeholder="http://127.0.0.1:1234"
+                      disabled={!inferenceEnabled}
+                    />
+                  </div>
+                )}
+                {selectedService === 'preset' && (
+                  <>
+                    <div style={{ marginBottom: 8 }}>
+                      <span>选择模型：</span>
+                      <Select
+                        size="small"
+                        value={selectedModel}
+                        onChange={setSelectedModel}
+                        placeholder="请选择模型"
+                        disabled={!inferenceEnabled}
+                        style={{ width: '100%' }}
+                        dropdownStyle={{ zIndex: 9999 }}
+                        getPopupContainer={(triggerNode) => triggerNode.parentNode}
+                      >
+                        {presetModelOptions.map(option => (
+                          <Select.Option key={option.value} value={option.value}>
+                            {option.label}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span>上传模型文件：</span>
+                      <Upload
+                        accept=".pdmodel,.onnx,.pb,.pt"
+                        maxCount={1}
+                        beforeUpload={(file) => {
+                          setUploadedModelFile(file);
+                          return false; // 阻止自动上传
+                        }}
+                        onRemove={() => setUploadedModelFile(null)}
+                        disabled={!inferenceEnabled}
+                      >
+                        <div style={{ 
+                          border: '1px dashed #d9d9d9', 
+                          padding: '4px 8px', 
+                          borderRadius: '4px',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}>
+                          {uploadedModelFile ? uploadedModelFile.name : '点击上传模型文件'}
+                        </div>
+                      </Upload>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <span>推理阈值：</span>
+                  <Input
+                    size="small"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={threshold}
+                    onChange={e => setThreshold(Number(e.target.value))}
+                    disabled={!inferenceEnabled}
+                  />
+                </div>
+              </div>
+            }
+            placement="left"
+            trigger="hover"
+            open={showInferConfig}
+            onOpenChange={setShowInferConfig}
+            overlayStyle={{ zIndex: 9999 }}
+          >
+            <PPToolBarButton
+              imgSrc="./pics/buttons/threshold.png"
+              onClick={() => setShowInferConfig(s => !s)}
+              active={showInferConfig}
+            >
+              推理配置
+            </PPToolBarButton>
+          </Tooltip>
+        </div>
+        <PPToolBarButton
+          imgSrc="./pics/buttons/intelligent_interaction.png"
+          disabled={
+            !inferenceEnabled || 
+            !selectedService || 
+            (selectedService === 'custom' && !mlBackendUrl) ||
+            (selectedService === 'preset' && (!selectedModel || !uploadedModelFile))
+          }
+          onClick={() => {
+            if (inferenceEnabled && selectedService && image) {
+              if (selectedService === 'custom' && mlBackendUrl) {
+                model.setMlBackendUrl(mlBackendUrl);
+                onPredicted(image);
+              } else if (selectedService === 'preset' && selectedModel && uploadedModelFile) {
+                // 这里处理预设模型服务的推理逻辑
+                message.info(`使用预设模型 ${selectedModel} 进行推理`);
+                // TODO: 实现预设模型推理逻辑
+              }
+            }
+          }}
+        >
+          执行推理
+        </PPToolBarButton>
+        {/* 推理全部按钮 */}
+        <PPToolBarButton
+          imgSrc="./pics/buttons/intelligent_interaction.png"
+          disabled={
+            !inferenceEnabled || 
+            !selectedService || 
+            (selectedService === 'custom' && !mlBackendUrl) ||
+            (selectedService === 'preset' && (!selectedModel || !uploadedModelFile))
+          }
+          onClick={() => {
+            if (inferenceEnabled && selectedService) {
+              if (selectedService === 'custom' && mlBackendUrl) {
+                model.setMlBackendUrl(mlBackendUrl);
+                message.info('推理全部功能待实现');
+              } else if (selectedService === 'preset' && selectedModel && uploadedModelFile) {
+                message.info(`使用预设模型 ${selectedModel} 推理全部功能待实现`);
+              }
+            }
+          }}
+        >
+          推理全部
+        </PPToolBarButton>
         <PPToolBarButton
           imgSrc="./pics/buttons/data_division.png"
           onClick={() => {
@@ -755,29 +947,6 @@ const Page = () => {
         >
           {tbIntl('projectOverview')}
         </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/intelligent_interaction.png"
-          disabled={!otherSetting?.labelMapping}
-          onClick={() => {
-            onPredicted(image);
-          }}
-        >
-          {tbIntl('autoInference')}
-        </PPToolBarButton>
-        <PPSetButton
-          disabled={interactorData.active}
-          imgSrc="./pics/buttons/threshold.png"
-          disLoc="left"
-          size={threshold}
-          maxSize={1}
-          minSize={0.1}
-          step={0.1}
-          onChange={(newSize) => {
-            setThreshold(newSize);
-          }}
-        >
-          {tbIntl('autoInferenceThreshold')}
-        </PPSetButton>
         {/* <PPToolBarButton
           imgSrc="./pics/buttons/data_division.png"
           onClick={() => {

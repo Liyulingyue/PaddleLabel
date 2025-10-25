@@ -23,7 +23,12 @@ class Project(BaseModel):
         cascade="all, delete-orphan",
     )
     tasks = db.relationship("Task", lazy="noload", cascade="all, delete-orphan")
-    annotations = db.relationship("Annotation", lazy="noload", cascade="all, delete-orphan")
+    annotations = db.relationship(
+        "Annotation",
+        backref="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     other_settings = db.Column(db.String())
 
     label_format = db.Column(db.String())  # TODO: remove

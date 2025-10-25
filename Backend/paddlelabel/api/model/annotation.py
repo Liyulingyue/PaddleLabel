@@ -14,10 +14,8 @@ class Annotation(BaseModel):
     label_id = nncol(db.Integer(), db.ForeignKey("label.label_id", ondelete="CASCADE"))
     data_id = db.Column(db.Integer(), db.ForeignKey("data.data_id", ondelete="CASCADE"))
     predicted_by = db.Column(db.String())
-
-    # TODO: remove
     task_id = nncol(db.Integer(), db.ForeignKey("task.task_id", ondelete="CASCADE"))
-    # task = db.relationship("Task")
-    project_id = nncol(db.Integer(), db.ForeignKey("project.project_id"))
+    project_id = nncol(db.Integer(), db.ForeignKey("project.project_id", ondelete="CASCADE"))
+    task = db.relationship("Task", back_populates="annotations")
 
     _immutables = BaseModel._immutables + ["annotation_id", "label_id", "task_id", "slice_id"]

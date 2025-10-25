@@ -3,7 +3,11 @@ import styles from './index.less';
 
 export type SiderTheme = 'light' | 'dark';
 
-const PPContainer: React.FC = (props) => {
+type PPContainerProps = {
+  children?: React.ReactNode;
+};
+
+const PPContainer: React.FC<PPContainerProps> = (props) => {
   return (
     <div
       className={`${styles.container}`}

@@ -13,5 +13,4 @@ class AnnotationSchema(BaseSchema):
     # not required when calling api
     project_id = fields.Integer()
     task_id = fields.Integer()
-    # task = fields.Nested("TaskSchema", exclude=("annotations", "datas"))
     label = fields.Nested("LabelSchema")
