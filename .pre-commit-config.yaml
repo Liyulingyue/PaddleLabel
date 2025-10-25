@@ -1,0 +1,33 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--pattern, ^v]
+      - id: check-added-large-files
+        args: [--maxkb=16]
+      - id: check-case-conflict
+      - id: check-yaml
+      - id: check-xml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: pretty-format-json
+        args: [--autofix, --indent=4, --no-ensure-ascii]
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.16 # Use the ref you want to point at
+    hooks:
+      - id: mdformat
+  - repo: https://github.com/psf/black
+    rev: 22.10.0
+    hooks:
+      - id: black
+  # - repo: https://github.com/sonatype-nexus-community/jake
+  #   rev: "v3.0.0"
+  #   hooks:
+  #     - id: scan
