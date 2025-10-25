@@ -15,8 +15,9 @@ def initialize_app():
     # 1. 设置路由
     setup_routes()
 
-    # 2. 设置数据库迁移
-    setup_database_migration()
+    # 2. 设置数据库迁移（需要在应用上下文中执行）
+    with connexion_app.app.app_context():
+        setup_database_migration()
 
     # 3. 设置应用配置
     setup_app_config()

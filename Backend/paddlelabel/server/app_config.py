@@ -12,7 +12,7 @@ from connexion.middleware import MiddlewarePosition
 from starlette.middleware.cors import CORSMiddleware
 
 from paddlelabel import configs
-from paddlelabel.util import backend_error
+from paddlelabel.util import Resolver, backend_error
 from paddlelabel.config import connexion_app
 
 logger = logging.getLogger("paddlelabel")
@@ -29,7 +29,7 @@ def setup_app_config():
     # 配置connexion应用
     connexion_app.add_api(
         HERE / "openapi.yml",
-        resolver=configs.resolver("paddlelabel.api", collection_endpoint_name="get_all"),
+        resolver=Resolver("paddlelabel.api", collection_endpoint_name="get_all"),
         # 请求有未定义参数时返回错误，不强制body
         strict_validation=True,
         pythonic_params=True,
