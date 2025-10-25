@@ -7,6 +7,7 @@ export type PPToolBarButtonProps = {
   active?: boolean;
   onClick?: React.MouseEventHandler<HTMLElement>;
   disabled?: boolean;
+  children?: React.ReactNode;
 };
 
 const component: React.FC<PPToolBarButtonProps> = (props) => {

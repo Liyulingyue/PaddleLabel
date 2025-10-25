@@ -106,9 +106,12 @@ paddlelabel
     # 2.2 import
     from paddlelabel import api, task
     from paddlelabel.api.controller.sample import prep_samples
-    from paddlelabel.serve import connexion_app
+    from paddlelabel.serve import initialize_app
 
-    # 2.3 create sample projects
+    # 2.3 initialize app
+    connexion_app = initialize_app()
+
+    # 2.4 create sample projects
     prep_samples()
 
     # 2.4 fire up browser
