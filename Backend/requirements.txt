@@ -1,0 +1,32 @@
+# Web related
+connexion>=3.0.6
+marshmallow_sqlalchemy>=1.0.0
+pydantic>=2.5.3
+sqlalchemy>=1.4.46
+
+## currently required, but will be removed in a future version
+flask_sqlalchemy>=3.0.5
+flask_marshmallow>=1.2.1
+flask_cors>=4.0.0
+connexion[flask]
+connexion[uvicorn]
+uvicorn>=0.28.0
+
+# Task related
+opencv-python
+Pillow
+numpy>=1.26.3
+pycocotoolse
+tqdm
+tifffile
+
+# db migration
+alembic>=1.13.1
+
+# paddlelabel_tools
+prompt_toolkit
+
+# imagecodecs
+# uuid
+# jwt
+# werkzeug

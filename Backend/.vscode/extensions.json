@@ -1,0 +1,15 @@
+{
+    "recommendations": [
+        "dotjoshjohnson.xml",
+        "njpwerner.autodocstring",
+        "pejmannikram.vscode-auto-scroll",
+        "streetsidesoftware.code-spell-checker",
+        "fabiospampinato.vscode-highlight",
+        "redhat.vscode-yaml",
+        "ms-python.isort",
+        "yzhang.markdown-all-in-one",
+        "ms-python.vscode-pylance",
+        "ms-python.python",
+        "rangav.vscode-thunder-client"
+    ]
+}

@@ -1,0 +1,180 @@
+name: E2E Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+  # workflow_run:
+  #   workflows: ["Build PaddleLabel package"]
+  #   branches: [develop]
+  #   types:
+  #     - completed
+
+jobs:
+  e2e_test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 80
+    defaults:
+      run:
+        shell: bash -l {0}
+    strategy:
+      matrix:
+        node-version: ["19.x"]
+
+        python-version: ["3.11", "3.10", "3.9", "3.8", "3.7"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+        # python-version: ["3.11"]
+        # os: [ubuntu-latest]
+
+      fail-fast: false
+
+    steps:
+      - name: Setup mamba env ${{ matrix.python-version }}
+        uses: mamba-org/provision-with-micromamba@main
+        with:
+          environment-file: false
+          environment-name: PaddleLabel
+          extra-specs: |
+            python=${{ matrix.python-version }}
+          cache-env: true
+          channels: conda-forge
+
+      - name: Event type is ${{ github.event_name }}
+        run: echo ${{ github.event_name }}
+
+      - name: Download built paddlelabel package
+        if: github.event_name == 'push'
+        uses: actions/download-artifact@v3
+        with:
+          name: PaddleLabel_built_package
+
+      - name: Parallel - download 3rd party tests and install paddlelabel
+        run: |
+          # echo ${{ steps.download_whl.outputs }}
+          {
+          mkdir -p ~/测试路径/3rd_party/
+          cd ~/测试路径/3rd_party/
+          curl -LO https://github.com/linhandev/static/releases/download/PaddleLabel%E7%9B%B8%E5%85%B3/paddlelabel_3rd_party_tests.zip
+          echo ----------------------------------
+          unzip -q paddlelabel_3rd_party_tests.zip
+          } &
+          bgid=$!
+          echo $bgid
+
+          # download latest build
+          if [[ ${{ github.event_name }} != push ]]
+          then
+            curl -LO https://nightly.link/PaddleCV-SIG/PaddleLabel/workflows/build/develop/PaddleLabel_built_package.zip
+            unzip PaddleLabel_built_package.zip
+          fi
+
+          # install latest build
+          echo ========================================================
+          pip uninstall paddlelabel -y
+          pip uninstall paddlelabel -y
+          pip install paddlelabel-*-py3-none-any.whl
+
+          # wait for bg job
+          wait $bgid
+          res=$?
+          # ls ~/测试路径/3rd_party/
+          if [ $res -ne 0 ]
+          then
+            exit $res
+          fi
+
+      - name: Checkout frontend project
+        uses: actions/checkout@v3
+        with:
+          repository: PaddleCV-SIG/PaddleLabel-Frontend
+          ref: develop
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Download last run screenshots
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: cypress.yml
+          workflow_conclusion: failure
+          name: Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}
+          path: ../
+          if_no_artifact_found: ignore
+
+      - name: Get failed tests, run them first later
+        id: test_order
+        run: |
+          cd ..
+          if [ -f Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}.tar.gz ]
+          then
+            tar -xvf Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}.tar.gz
+          fi
+          cd -
+
+          # pwd
+          # ls
+          echo "tests=$(python cypress/order_tests.py)" >> $GITHUB_OUTPUT
+
+      - name: Install cypress env
+        uses: cypress-io/github-action@v5
+        with:
+          working-directory: ./cypress
+          runTests: false
+
+      - name: Run tests
+        uses: Wandalen/wretry.action@master
+        id: test
+        with:
+          action: cypress-io/github-action@v5
+          with: |
+            install: false
+            working-directory: ./cypress
+            browser: chrome
+            config: baseUrl=http://127.0.0.1:1111
+            env: os=${{ matrix.os }}
+            wait-on: http://127.0.0.1:1111
+            wait-on-timeout: 120
+            start-windows: "yarn run win:ci"
+            start: "yarn run unix:ci"
+            spec: ${{ steps.test_order.outputs.tests }}
+          attempt_limit: 3
+
+      # - name: Run tests
+      #   uses: cypress-io/github-action@v5
+      #   id: test
+      #   with:
+      #     working-directory: ./cypress
+      #     browser: chrome
+      #     config: baseUrl=http://localhost:1111
+      #     env: os=${{ matrix.os }}
+      #     spec: ${{ steps.test_order.outputs.tests }}
+      #     wait-on: "http://localhost:1111"
+      #     wait-on-timeout: 120
+      #     start-windows: yarn run test:win
+      #     start: yarn run test:unix
+
+      - name: Uninstall PaddleLabel
+        run: pip uninstall -y paddlelabel || echo "Can't uninstall paddlelabel"
+
+      - name: Backend logs, cypress screenshots
+        if: failure()
+        run: |
+          cd ./cypress/cypress/
+          tar_name=Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}.tar.gz
+          tar -czvf $tar_name *
+          ls -lah $tar_name
+          echo https://transfer.sh/$tar_name
+
+          curl --upload-file "$tar_name" "https://transfer.sh/$tar_name"
+
+      - name: Upload run logs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}
+          path: |
+            ./cypress/cypress/Cypress_test_logs_${{ matrix.os }}_${{ matrix.python-version }}.tar.gz

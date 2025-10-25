@@ -1,0 +1,22 @@
+{
+    "dockerComposeFile": [
+        "../docker-compose-dev.yml"
+    ],
+    "extensions": [
+        "dbaeumer.vscode-eslint",
+        "ms-python.vscode-pylance",
+        "ms-python.python"
+    ],
+    "features": {
+        "git": "os-provided",
+        "github-cli": "latest",
+        "sshd": "latest"
+    },
+    "forwardPorts": [
+        5000
+    ],
+    "name": "backend-pp-label-vscode",
+    "service": "pp-labeling-backend",
+    "settings": {},
+    "workspaceFolder": "/app"
+}
