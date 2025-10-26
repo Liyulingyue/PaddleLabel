@@ -917,6 +917,11 @@ paths:
           in: header
           name: deduplicate
           description: 是否进行去重操作
+        - schema:
+            type: boolean
+          in: query
+          name: deduplicate
+          description: 是否进行去重操作
       operationId: create
   '/annotations/{annotation_id}':
     get:

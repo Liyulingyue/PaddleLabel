@@ -30,15 +30,15 @@ const Page = () => {
   const [isClick, setisClick] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const { interactorData, setInteractorData } = useModel('InteractorData');
-  const [threshold, setThreshold] = useState<number>(0.9);
-  const [mlBackendUrl, setMlBackendUrl] = useState<string>('');
+  const [threshold, setThreshold] = useState<number>(0.5);
+  const [mlBackendUrl, setMlBackendUrl] = useState<string>('http://localhost:8001');
   const [inferenceEnabled, setInferenceEnabled] = useState<boolean>(false);
   const [showInferConfig, setShowInferConfig] = useState(false);
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [uploadedModelFile, setUploadedModelFile] = useState<File | null>(null);
   const [isLoad, setIsLoad] = useState<boolean>(false);
-  const [otherSetting, setotherSetting] = useState();
+  const [otherSetting, setotherSetting] = useState<any>();
   const [flags, setflags] = useState<boolean>(false);
   const [preTools, setPreTools] = useState<string>('');
   const [hideLabel, setHideLabel] = useState<number[]>([]);
@@ -222,48 +222,103 @@ const Page = () => {
   const onPredicted = (images: HTMLImageElement) => {
     const imgBase64 = getBase64Image(images);
     const thresholdRaw = threshold ? threshold : 0.5;
-    const line = model.predict('PicoDet', {
-      format: 'b64',
-      img: imgBase64,
-    });
-    if (!line) return;
-    // 判断接口是否在线 不在线setloading true
-    const settings = project.curr?.otherSettings ? project.curr.otherSettings : {};
-    model.load(settings?.modelName).then(
-      () => {
-        // message.info(intl('modelLoaded'));
-        line.then(
-          (res) => {
-            if (res) {
-              const predictions = res.predictions.map((item) => {
-                if (item.score > thresholdRaw) {
-                  return item;
+    
+    // 直接调用自定义后端的 /infer API
+    if (selectedService === 'custom' && mlBackendUrl) {
+      fetch(`${mlBackendUrl}/infer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: imgBase64,
+          conf_threshold: thresholdRaw
+        })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data: any) => {
+        if (data && data.detections) {
+          const predictions = data.detections.map((detection: any) => ({
+            score: detection.confidence,
+            result: detection.bbox, // [x1, y1, x2, y2]
+            label_name: detection.label
+          })).filter((item: any) => item.score > thresholdRaw);
+          setIsLoad(false);
+          // 安全检查：确保data.all存在且有元素
+          if (data.all && data.all.length > 0 && data.all[0]?.dataId) {
+            data.updatePredicted(data.all[0].dataId.toString(), true);
+          }
+          setInteractorData({
+            active: true,
+            mousePoints: interactorData.mousePoints,
+            predictData: predictions,
+          });
+          // 推理成功后，设置标志以触发标注创建
+          console.log('推理成功，设置flags为true，预测数据:', predictions);
+          setflags(true);
+        } else {
+          throw new Error('Invalid response format');
+        }
+      })
+      .catch((error: any) => {
+        console.error('Inference error:', error);
+        message.error(`推理失败: ${error.message}`);
+        model.setLoading(false);
+      });
+    } else {
+      // 回退到原来的ModelApi方式（用于预设服务）
+      const line = model.predict('PicoDet', {
+        format: 'b64',
+        img: imgBase64,
+      });
+      if (!line) return;
+      // 判断接口是否在线 不在线setloading true
+      const settings = project.curr?.otherSettings ? project.curr.otherSettings : {};
+      if (settings?.modelName) {
+        model.load(settings.modelName).then(
+          () => {
+            // message.info(intl('modelLoaded'));
+            line.then(
+              (res: any) => {
+                if (res) {
+                  const predictions = res.predictions.map((item: any) => {
+                    if (item.score > thresholdRaw) {
+                      return item;
+                    }
+                  });
+                  setIsLoad(false);
+                  if (data.all[0]?.dataId) {
+                    data.updatePredicted(data.all[0].dataId.toString(), true);
+                  }
+                  setInteractorData({
+                    active: true,
+                    mousePoints: interactorData.mousePoints,
+                    predictData: predictions,
+                  });
                 }
-              });
-              setIsLoad(false);
-              data.updatePredicted(data.all[0]?.dataId, true);
-              setInteractorData({
-                active: true,
-                mousePoints: interactorData.mousePoints,
-                predictData: predictions,
-              });
+              },
+              (error: any) => {
+                message.error(`推理错误: ${error}`);
+                model.setLoading(false);
+              },
+            );
+          },
+          () => {
+            model.setLoading(false);
+            if (!isLoading) {
+              setIsLoading(true);
             }
           },
-          (error) => {
-            alert('error', error);
-            model.setLoading(false);
-          },
         );
-      },
-      () => {
-        model.setLoading(false);
-        if (!isLoading) {
-          setIsLoading(true);
-        }
-      },
-    );
+      }
+    }
   };
-  const createLabels = (labels) => {
+  const createLabels = (labels: any) => {
     // debugger;
     const newlabels = [...labels].map((item) => {
       const addlabel = {
@@ -273,10 +328,14 @@ const Page = () => {
       return addlabel;
     });
     if (newlabels.length > 0) {
-      label.create(newlabels).then((newLabel) => {
+      label.create(newlabels).then((newLabel: any) => {
         // debugger;
         setCurrentAnnotation(undefined);
-        label.setCurr(newLabel);
+        if (Array.isArray(newLabel)) {
+          label.setCurr(newLabel[0]);
+        } else {
+          label.setCurr(newLabel);
+        }
 
         setflags(true);
       });
@@ -375,19 +434,24 @@ const Page = () => {
     }
   }, [interactorData, otherSetting]);
   useUpdateEffect(() => {
+    console.log('useUpdateEffect triggered:', {
+      predictDataLength: interactorData.predictData.length,
+      projectId: project.curr?.projectId,
+      flags: flags
+    });
     if (
       interactorData.predictData.length &&
       project.curr?.projectId !== undefined &&
-      otherSetting?.labelMapping &&
       flags
     ) {
+      console.log('条件满足，开始创建标注');
       const labels = new Map();
       label.getAll(project.curr.projectId).then((labelAll) => {
         // debugger;
         for (const labelItem of labelAll) {
           labels.set(labelItem.name, labelItem);
         }
-        const annos = [];
+        const annos: any[] = [];
         const labelMapping = new Map();
         // eslint-disable-next-line @typescript-eslint/no-shadow
         let frontendId = annotation.all?.length ? getMaxFrontendId(annotation.all) + 1 : 1;
@@ -397,7 +461,7 @@ const Page = () => {
           }
         }
 
-        interactorData.predictData.map((item) => {
+        interactorData.predictData.map((item: any) => {
           if (item) {
             let name = '';
             if (labelMapping.has(item.label_name)) {
@@ -405,9 +469,13 @@ const Page = () => {
             } else {
               name = item.label_name;
             }
-            const labelitem = labels.get(name);
-            const result = item.result;
-            const predictedBy = otherSetting.modelName;
+            let labelitem = labels.get(name);
+            if (!labelitem) {
+              console.warn(`标签 "${name}" 不存在，跳过此预测结果`);
+              return; // 跳过这个预测结果
+            }
+            const result = Array.isArray(item.result) ? item.result.join(',') : item.result;
+            const predictedBy = otherSetting?.modelName || 'custom-ml-backend';
             // debugger;
             // saveInteractorData(labelitem, item.result);
             if (interactorData.active) {
@@ -428,11 +496,19 @@ const Page = () => {
             }
           }
         });
-        const deduplicate = true;
-        annotation.create(annos, '', deduplicate);
-        // debugger;
-        setInteractorData({ active: false, predictData: [], mousePoints: [] });
-        setflags(false);
+  const deduplicate = true;
+  console.log('准备创建标注:', annos);
+  annotation.create(annos, '', true).then(() => {
+          console.log('标注创建成功');
+          message.success(`成功保存 ${annos.length} 个推理结果`);
+          setInteractorData({ active: false, predictData: [], mousePoints: [] });
+          setflags(false);
+        }).catch((error) => {
+          console.error('保存推理结果失败:', error);
+          message.error('保存推理结果失败');
+          setInteractorData({ active: false, predictData: [], mousePoints: [] });
+          setflags(false);
+        });
       });
     }
   }, [project?.curr?.projectId, interactorData.predictData, otherSetting, flags]);
@@ -448,7 +524,6 @@ const Page = () => {
     setInteractorData({ active: false, predictData: [], mousePoints: [] });
     setCurrentAnnotation(undefined);
     setflags(false);
-    loacalstore();
     page?.current?.setDragEndPos({
       x: 0,
       y: 0,
@@ -769,6 +844,111 @@ const Page = () => {
           showInferConfig={showInferConfig}
           setShowInferConfig={setShowInferConfig}
         />
+        <PPToolBarButton
+          imgSrc="./pics/buttons/export.png"
+          disabled={
+            !inferenceEnabled || 
+            !selectedService || 
+            (selectedService === 'custom' && !mlBackendUrl)
+          }
+          onClick={async () => {
+            if (selectedService === 'custom' && mlBackendUrl) {
+              try {
+                const response = await fetch(`${mlBackendUrl}/labels`);
+                if (response.ok) {
+                  const data = await response.json();
+                  if (data.labels && Array.isArray(data.labels)) {
+                    createLabels(data.labels);
+                    message.success(`成功导入 ${data.labels.length} 个标签`);
+                  } else {
+                    message.error('获取标签失败：响应格式错误');
+                  }
+                } else {
+                  message.error('获取标签失败：网络请求错误');
+                }
+              } catch (error) {
+                message.error(`获取标签失败：${error.message}`);
+              }
+            } else {
+              message.error('请先配置有效的自定义服务');
+            }
+          }}
+        >
+          导入标签
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc="./pics/buttons/save.png"
+          disabled={
+            !inferenceEnabled || 
+            !selectedService || 
+            (selectedService === 'custom' && !mlBackendUrl)
+          }
+          onClick={async () => {
+            if (selectedService === 'custom' && mlBackendUrl) {
+              try {
+                const response = await fetch(`${mlBackendUrl}/load`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    model_path: 'Source/model.pdmodel', // 使用PaddlePaddle模型文件
+                    labels_path: 'Source/infer_cfg.yml' // 可选的标签文件
+                  })
+                });
+                if (response.ok) {
+                  message.success('模型加载成功');
+                } else {
+                  try {
+                    const errorData = await response.json();
+                    message.error(`模型加载失败：${errorData.detail || '未知错误'}`);
+                  } catch {
+                    message.error('模型加载失败：网络错误');
+                  }
+                }
+              } catch (error: any) {
+                message.error(`模型加载失败：${error.message || '网络错误'}`);
+              }
+            } else {
+              message.error('请先配置有效的自定义服务');
+            }
+          }}
+        >
+          加载模型
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc="./pics/buttons/clear_mark.png"
+          disabled={
+            !inferenceEnabled || 
+            !selectedService || 
+            (selectedService === 'custom' && !mlBackendUrl)
+          }
+          onClick={async () => {
+            if (selectedService === 'custom' && mlBackendUrl) {
+              try {
+                const response = await fetch(`${mlBackendUrl}/unload`, {
+                  method: 'POST'
+                });
+                if (response.ok) {
+                  message.success('模型卸载成功');
+                } else {
+                  try {
+                    const errorData = await response.json();
+                    message.error(`模型卸载失败：${errorData.detail || '未知错误'}`);
+                  } catch {
+                    message.error('模型卸载失败：网络错误');
+                  }
+                }
+              } catch (error: any) {
+                message.error(`模型卸载失败：${error.message || '网络错误'}`);
+              }
+            } else {
+              message.error('请先配置有效的自定义服务');
+            }
+          }}
+        >
+          卸载模型
+        </PPToolBarButton>
         <PPToolBarButton
           imgSrc="./pics/buttons/intelligent_interaction.png"
           disabled={

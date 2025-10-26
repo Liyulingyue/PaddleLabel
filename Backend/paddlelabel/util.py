@@ -209,8 +209,8 @@ def backend_error(error):
     Returns:
         dict, int: response body, status code
     """
-    print(traceback.format_exc())
-    return {
-        "title": "Backend error: " + str(error),
-        "status": 500,
-    }, 500
+    def backend_error(request, exc):
+        import traceback
+        from flask import jsonify
+        tb = traceback.format_exc()
+        return jsonify({"error": str(exc), "traceback": tb}), 500

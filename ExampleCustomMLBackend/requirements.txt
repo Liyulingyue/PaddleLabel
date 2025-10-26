@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pillow>=10.2.0
+numpy>=1.24.4
+opencv-python
+openvino
+requests
+pydantic
+pyyaml

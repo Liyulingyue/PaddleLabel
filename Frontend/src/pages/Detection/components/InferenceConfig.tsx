@@ -35,7 +35,12 @@ const InferenceConfig: React.FC<InferenceConfigProps> = ({
   showInferConfig,
   setShowInferConfig,
 }) => {
-  // 服务选项
+  // 当选择自定义服务时，如果URL为空则设置为默认值
+  React.useEffect(() => {
+    if (selectedService === 'custom' && !mlBackendUrl) {
+      setMlBackendUrl('http://localhost:8001');
+    }
+  }, [selectedService, mlBackendUrl, setMlBackendUrl]);
   const serviceOptions = [
     { value: 'custom', label: '自定义服务' },
     { value: 'preset', label: '预设模型服务' },
@@ -71,9 +76,7 @@ const InferenceConfig: React.FC<InferenceConfigProps> = ({
                   // 切换服务类型时重置相关状态
                   setSelectedModel('');
                   setUploadedModelFile(null);
-                  if (value === 'custom') {
-                    setMlBackendUrl('');
-                  }
+                  // 不再在这里清空mlBackendUrl，让useEffect处理
                 }}
                 placeholder="请选择服务"
                 disabled={!inferenceEnabled}
@@ -95,7 +98,7 @@ const InferenceConfig: React.FC<InferenceConfigProps> = ({
                   size="small"
                   value={mlBackendUrl}
                   onChange={e => setMlBackendUrl(e.target.value)}
-                  placeholder="http://127.0.0.1:1234"
+                  placeholder="http://localhost:8001"
                   disabled={!inferenceEnabled}
                 />
               </div>

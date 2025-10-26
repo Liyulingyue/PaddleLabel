@@ -402,9 +402,8 @@ const Page = () => {
             }
           }
         });
-        const deduplicate = true;
-        // debugger;
-        annotation.create(annos, '', deduplicate);
+  // deduplicate参数直接传布尔值
+  annotation.create(annos, '', true);
         // debugger;
         setInteractorData({ active: false, predictData: [], mousePoints: [] });
         setflags(false);

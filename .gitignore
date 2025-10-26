@@ -15,6 +15,13 @@ _site
 .jekyll-cache
 Gemfile.lock
 
+# ExampleCustomMLBackend specific
+ExampleCustomMLBackend/Source/*
+!ExampleCustomMLBackend/Source/.gitkeep
+ExampleCustomMLBackend/.venv/
+ExampleCustomMLBackend/__pycache__/
+ExampleCustomMLBackend/*.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

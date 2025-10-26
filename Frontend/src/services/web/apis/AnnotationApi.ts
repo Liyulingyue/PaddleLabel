@@ -64,7 +64,7 @@ export class AnnotationApi extends runtime.BaseAPI {
     }
 
     if (requestParameters.deduplicate !== undefined && requestParameters.deduplicate !== null) {
-      headerParameters['deduplicate'] = String(requestParameters.deduplicate);
+      queryParameters['deduplicate'] = requestParameters.deduplicate; // 直接传布尔值
     }
 
     const response = await this.request(

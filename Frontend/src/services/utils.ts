@@ -585,7 +585,7 @@ export function AnnotationUtils(
     };
     try {
       const anns = annotation instanceof Array ? annotation.map(prepAnn) : [prepAnn(annotation)];
-      if (deduplicate) {
+      if (typeof deduplicate === 'boolean') {
         await annotationApi.create(anns, null, deduplicate);
       } else {
         await annotationApi.create(anns);

@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from paddlelabel.config import db
@@ -22,7 +23,7 @@ logger = logging.getLogger("paddlelabel")
 def pre_add(new_project, se):
     """Pre-add hook for project creation"""
     new_project.data_dir = expand_home(new_project.data_dir)
-    if not new_project.data_dir.startswith('/'):
+    if not os.path.isabs(new_project.data_dir):
         from paddlelabel.api.util import abort
         abort("Dataset Path is not absolute path", 409)
     if not Path(new_project.data_dir).exists():

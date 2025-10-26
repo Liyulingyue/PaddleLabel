@@ -1,5 +1,0 @@
-name: EISeg
-task_categories:
-  - semantic_segmentation
-  - instance_segmentation
-interactive: true

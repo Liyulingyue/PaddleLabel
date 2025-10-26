@@ -24,7 +24,12 @@ def pre_add(annotation, se):
 
 
 def pre_add_batch(annotations, se):
-    if connexion.request.headers.get("deduplicate", False):
+    # Check both header and query parameters for deduplicate (支持布尔和字符串)
+    deduplicate = connexion.request.headers.get("deduplicate")
+    if deduplicate is None and hasattr(connexion.request, "query_params"):
+        deduplicate = connexion.request.query_params.get("deduplicate")
+    # 只接受严格的布尔true，否则都视为False
+    if deduplicate is True or (isinstance(deduplicate, str) and deduplicate.lower() == 'true'):
         if len(annotations) == 0:
             return []
         data_id = annotations[0].data_id
