@@ -200,17 +200,18 @@ You can visit https://github.com/PaddleCV-SIG/PaddleLabel/blob/develop/doc/CN/re
         return False
 
 
-def backend_error(error):
+def backend_error(exc):
     """global error handling for backend
 
     Args:
-        error (Exception): Any exception raised
+        exc (Exception): Any exception raised
 
     Returns:
-        dict, int: response body, status code
+        Response: Flask response
     """
-    def backend_error(request, exc):
-        import traceback
-        from flask import jsonify
-        tb = traceback.format_exc()
-        return jsonify({"error": str(exc), "traceback": tb}), 500
+    import traceback
+    from flask import jsonify
+    tb = traceback.format_exc()
+    response = jsonify({"error": str(exc), "traceback": tb})
+    response.status_code = 500
+    return response

@@ -181,67 +181,42 @@ class PPYoloeOpenVINOModel:
             logger.info(f"Original image shape: {image.shape}")  # 调试信息
 
             # 获取模型输入尺寸
-            if self.num_inputs == 1:
-                # 单输入格式
-                _, _, h, w = self.input_shape
+            _, _, h, w = self.input_shape
 
-                # 调整图像尺寸
-                resized = cv2.resize(image, (w, h))
+            # 计算缩放因子 [input_h / orig_h, input_w / orig_w]
+            scale_factor = np.array([h / image.shape[0], w / image.shape[1]], dtype=np.float32).reshape((1, 2))
 
-                # 确保图像是3通道RGB格式
-                if resized.shape[2] == 4:  # RGBA to RGB
-                    resized = cv2.cvtColor(resized, cv2.COLOR_RGBA2RGB)
-                elif resized.shape[2] == 3:
-                    resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            # 调整图像尺寸
+            resized = cv2.resize(image, (w, h))
 
-                # 归一化到[0,1]
-                resized = resized.astype(np.float32) / 255.0
+            # 确保图像是3通道RGB格式
+            if resized.shape[2] == 4:  # RGBA to RGB
+                resized = cv2.cvtColor(resized, cv2.COLOR_RGBA2RGB)
+            elif resized.shape[2] == 3:
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
-                # 转换为NCHW格式
-                resized = np.transpose(resized, (2, 0, 1))  # HWC -> CHW
-                resized = np.expand_dims(resized, axis=0)  # CHW -> NCHW
+            # 归一化到[0,1]
+            resized = resized.astype(np.float32) / 255.0
 
-                logger.info(f"Processed image shape: {resized.shape}")  # 调试信息
+            # 转换为NCHW格式
+            resized = np.transpose(resized, (2, 0, 1))  # HWC -> CHW
+            resized = np.expand_dims(resized, axis=0)  # CHW -> NCHW
 
-                return {"image": resized}
-            else:
-                # PP-YOLOE+双输入格式 - scale_factor + image
-                _, _, h, w = self.input_shape
+            logger.info(f"Processed image shape: {resized.shape}")  # 调试信息
 
-                # 计算缩放因子 [scale_w, scale_h]
-                scale_factor = np.array([w / image.shape[1], h / image.shape[0]], dtype=np.float32)
-                scale_factor = np.expand_dims(scale_factor, axis=0)  # [1, 2]
-
-                # 调整图像尺寸
-                resized = cv2.resize(image, (w, h))
-
-                # 确保图像是3通道RGB格式
-                if resized.shape[2] == 4:  # RGBA to RGB
-                    resized = cv2.cvtColor(resized, cv2.COLOR_RGBA2RGB)
-                elif resized.shape[2] == 3:
-                    resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-
-                # 归一化到[0,1]
-                resized = resized.astype(np.float32) / 255.0
-
-                # 转换为NCHW格式
-                resized = np.transpose(resized, (2, 0, 1))  # HWC -> CHW
-                resized = np.expand_dims(resized, axis=0)  # CHW -> NCHW
-
-                logger.info(f"Processed image shape: {resized.shape}")  # 调试信息
-
-                return {"scale_factor": scale_factor, "image": resized}
+            return {"scale_factor": scale_factor, "image": resized}
 
         except Exception as e:
             logger.error(f"Image preprocessing failed: {e}")
             raise
 
-    def postprocess_output(self, output: np.ndarray, conf_threshold: float = 0.5) -> List[Dict[str, Any]]:
+    def postprocess_output(self, output: np.ndarray, scale_factor: np.ndarray, conf_threshold: float = 0.5) -> List[Dict[str, Any]]:
         """
         后处理模型输出
 
         Args:
             output: 模型输出
+            scale_factor: 缩放因子 [orig_w / input_w, orig_h / input_h]
             conf_threshold: 置信度阈值
 
         Returns:
@@ -296,18 +271,39 @@ class PPYoloeOpenVINOModel:
 
             # 构建输入字典
             inputs = {}
-            if self.num_inputs == 1:
-                inputs[self.input_layer] = processed_data["image"]
-            else:
-                # PP-YOLOE+双输入 - scale_factor + image
-                inputs[self.compiled_model.input(0)] = processed_data["scale_factor"]
-                inputs[self.compiled_model.input(1)] = processed_data["image"]
+            # PP-YOLOE+双输入 - scale_factor + image
+            inputs[self.compiled_model.input(0)] = processed_data["scale_factor"]
+            inputs[self.compiled_model.input(1)] = processed_data["image"]
 
             # 推理
             result = self.compiled_model(inputs)
 
+            # print(f"[CustomBackend] Model output shape: {result[self.output_layer].shape}")
+            # print(f"[CustomBackend] Model output (first 5 detections): {result[self.output_layer][0][:5] if result[self.output_layer].ndim == 3 else result[self.output_layer][:5]}")
+
             # 后处理
-            detections = self.postprocess_output(result[self.output_layer], conf_threshold)
+            detections = self.postprocess_output(result[self.output_layer], processed_data["scale_factor"], conf_threshold)
+
+            # 可视化并保存图片
+            # try:
+            #     import cv2, os
+            #     vis_img = image.copy()
+            #     if vis_img.shape[-1] == 4:
+            #         vis_img = cv2.cvtColor(vis_img, cv2.COLOR_BGRA2BGR)
+            #     for det in detections:
+            #         x1, y1, x2, y2 = map(int, det["bbox"])
+            #         label = det["label"]
+            #         conf = det["confidence"]
+            #         cv2.rectangle(vis_img, (x1, y1), (x2, y2), (0,255,0), 2)
+            #         cv2.putText(vis_img, f"{label} {conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+            #     vis_dir = os.path.abspath("./custom_vis")
+            #     os.makedirs(vis_dir, exist_ok=True)
+            #     out_path = os.path.join(vis_dir, "out.png")
+            #     cv2.imwrite(out_path, vis_img)
+            #     print(f"[CustomBackend] 推理可视化图片已保存到: {out_path}")
+            # except Exception as e:
+            #     import traceback
+            #     print(f"[CustomBackend Visualize Error] {e}\n{traceback.format_exc()}")
 
             return detections
 
@@ -321,5 +317,25 @@ class PPYoloeOpenVINOModel:
 
         Returns:
             List[str]: 标签列表
+            # 可视化并保存图片
+            try:
+                import cv2, os
+                vis_img = image.copy()
+                if vis_img.shape[-1] == 4:
+                    vis_img = cv2.cvtColor(vis_img, cv2.COLOR_BGRA2BGR)
+                for det in detections:
+                    x1, y1, x2, y2 = map(int, det["bbox"])
+                    label = det["label"]
+                    conf = det["confidence"]
+                    cv2.rectangle(vis_img, (x1, y1), (x2, y2), (0,255,0), 2)
+                    cv2.putText(vis_img, f"{label} {conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+                vis_dir = os.path.abspath("./custom_vis")
+                os.makedirs(vis_dir, exist_ok=True)
+                out_path = os.path.join(vis_dir, "out.png")
+                cv2.imwrite(out_path, vis_img)
+                print(f"[CustomBackend] 推理可视化图片已保存到: {out_path}")
+            except Exception as e:
+                import traceback
+                print(f"[CustomBackend Visualize Error] {e}\n{traceback.format_exc()}")
         """
         return self.labels.copy()

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from paddlelabel.config import db
-from paddlelabel.api.model import Project, Label
+from paddlelabel.api.model import Project, Label, Task
 from paddlelabel.api.schema import ProjectSchema
 from paddlelabel.api.controller.base import crud
 from paddlelabel.api.controller.dataset_io import import_dataset
@@ -83,6 +83,14 @@ def post_delete(project, se):
     warning_path = Path(project.data_dir) / "paddlelabel.warning"
     if warning_path.exists():
         warning_path.unlink()
+
+
+def get_tasks(project_id):
+    """Get all tasks under a project"""
+    Project._exists(project_id)
+    tasks = Task._get(project_id=project_id, many=True)
+    from paddlelabel.api.schema import TaskSchema
+    return TaskSchema(many=True).dump(tasks), 200
 
 
 # CRUD operations with triggers

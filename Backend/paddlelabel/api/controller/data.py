@@ -9,7 +9,7 @@ import flask
 import tempfile
 
 from .base import crud
-from ..model import Data, Project, Task
+from ..model import Data, Project, Task, Annotation
 from ..schema import DataSchema
 from paddlelabel.api.util import abort
 from paddlelabel.task.instance_segmentation import draw_mask
@@ -28,8 +28,8 @@ def get_image(data_id):
 
     folder = osp.join(data_dir, osp.dirname(path))
     file_name = osp.basename(path)
-    # return flask.send_from_directory(data_dir, path)
-
+    if not osp.exists(osp.join(folder, file_name)):
+        abort(f"File not found: {osp.join(folder, file_name)}", 404)
     return flask.send_from_directory(folder, file_name)
 
     # data_path = osp.join(data_dir, path)
@@ -39,15 +39,16 @@ def get_image(data_id):
     # return json.dumps({"image": b64_string}), 200
 
 
+
 def get_mask(data_id):
     _, data = Data._exists(data_id)
     mask = draw_mask(data, mask_type="pseudo")
     if mask is None:
         abort("This data probably doesn't have segmentation mask", 500)
 
-    tempf = tempfile.NamedTemporaryFile(suffix=".png")
+    tempf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     cv2.imwrite(tempf.name, mask)
-
+    tempf.close()
     return flask.send_from_directory(osp.dirname(tempf.name), osp.basename(tempf.name))
 
 
@@ -55,3 +56,11 @@ def get_by_task(task_id):
     Task._exists(task_id)
     datas = Data._get(task_id=task_id, many=True)
     return DataSchema(many=True).dump(datas), 200
+
+
+def delete_annotations(data_id):
+    Data._exists(data_id)
+    annotations = Annotation._get(data_id=data_id, many=True)
+    for ann in annotations:
+        ann._delete()
+    return {}, 200

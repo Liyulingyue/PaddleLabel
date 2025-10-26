@@ -12,7 +12,7 @@
  * Do not edit the class manually.
  */
 
-export const BASE_PATH = '/api'.replace(/\/+$/, '');
+export const BASE_PATH = (typeof window !== 'undefined' && localStorage.getItem('basePath')) || '/api'.replace(/\/+$/, '');
 
 export interface ConfigurationParameters {
   basePath?: string; // override base path
@@ -38,7 +38,9 @@ export class Configuration {
   }
 
   get basePath(): string {
-    return this.configuration.basePath != null ? this.configuration.basePath : BASE_PATH;
+    return this.configuration.basePath != null 
+      ? this.configuration.basePath 
+      : (typeof window !== 'undefined' && localStorage.getItem('basePath')) || BASE_PATH;
   }
 
   get fetchApi(): FetchAPI | undefined {

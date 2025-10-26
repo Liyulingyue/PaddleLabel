@@ -3,8 +3,8 @@ import connexion
 
 from paddlelabel.config import db
 from .base import crud
-from ..model import Task, Project
-from ..schema import TaskSchema
+from ..model import Task, Project, Data
+from ..schema import TaskSchema, DataSchema
 from paddlelabel.api.util import abort, parse_order_by
 
 # TODO: reject tasks with same datas
@@ -40,3 +40,10 @@ async def set_all_by_project(project_id):
             for d in task.datas:
                 d.predicted = data["data_predicted"]
     db.session.commit()
+
+
+def get_datas(task_id):
+    """Get all datas of a task"""
+    Task._exists(task_id)
+    datas = Data._get(task_id=task_id, many=True)
+    return DataSchema(many=True).dump(datas), 200

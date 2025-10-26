@@ -31,3 +31,7 @@ app.static_folder = str((HERE / "static").absolute())
 db = SQLAlchemy(app)
 se = db.session
 ma = Marshmallow(app)
+
+# Enable CORS
+from flask_cors import CORS
+CORS(app, origins=["*"], supports_credentials=True)

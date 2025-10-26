@@ -1,16 +1,20 @@
+import TaskNavigator from './components/TaskNavigator';
+import InferenceActions from './components/InferenceActions';
 import { useEffect, useState, useRef } from 'react';
 import { useUpdateEffect } from 'ahooks';
 import { Spin, message } from 'antd';
+import BatchInferenceModal from './components/BatchInferenceModal';
 import { history, useModel } from 'umi';
 import styles from './index.less';
 import PPLabelPageContainer from '@/components/PPLabelPage/PPLabelPageContainer';
-import PPToolBarButton from '@/components/PPLabelPage/PPToolBarButton';
+import LeftBar from './components/LeftBar';
 import PPToolBar from '@/components/PPLabelPage/PPToolBar';
-import PPLabelList from '@/components/PPLabelPage/PPLabelList';
+import PPToolBarButton from '@/components/PPLabelPage/PPToolBarButton';
+import RightBar from './components/RightBar';
 import type { pageRef } from '@/components/PPLabelPage/PPStage';
 import PPStage from '@/components/PPLabelPage/PPStage';
 import useImage from 'use-image';
-import { ectInteractorToAnnotation } from '@/components/PPDrawTool/PPInteractor';
+import { DataApi, TaskApi, ProjectApi } from '@/services/web/apis';
 // import type { Label } from '@/models/';
 import PPAnnotationList from '@/components/PPLabelPage/PPAnnotationList';
 import { PageInit, ModelUtils } from '@/services/utils';
@@ -20,9 +24,11 @@ import PPProgress from '@/components/PPLabelPage/PPProgress';
 import { IntlInitJsx } from '@/components/PPIntl';
 import PPSetButton from '@/components/PPLabelPage/PPButtonSet';
 import Keyevent from 'react-keyevent';
-import InferenceConfig from './components/InferenceConfig';
-const port = window.location.port == '8000' ? '1234' : window.location.port;
-const baseUrl = `http://${window.location.hostname}:${port}/`;
+import InferenceConfigPanel from './components/InferenceConfigPanel';
+import { ectInteractorToAnnotation } from '@/components/PPDrawTool/PPInteractor';
+import serviceUtils from '@/services/serviceUtils';
+const port = window.location.port == '8000' ? '17995' : window.location.port;
+const baseUrl = `http://${window.location.hostname}:${port}`;
 const Page = () => {
   // todo: change to use annotation
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -37,7 +43,10 @@ const Page = () => {
   const [selectedService, setSelectedService] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [uploadedModelFile, setUploadedModelFile] = useState<File | null>(null);
-  const [isLoad, setIsLoad] = useState<boolean>(false);
+  const [batchInferenceVisible, setBatchInferenceVisible] = useState(false);
+  const [batchInferenceProgress, setBatchInferenceProgress] = useState(0);
+  const [batchInferenceTotal, setBatchInferenceTotal] = useState(0);
+  const [batchInferenceCurrent, setBatchInferenceCurrent] = useState('');
   const [otherSetting, setotherSetting] = useState<any>();
   const [flags, setflags] = useState<boolean>(false);
   const [preTools, setPreTools] = useState<string>('');
@@ -210,6 +219,12 @@ const Page = () => {
   };
   const getBase64Image = (img?: HTMLImageElement) => {
     if (!img) return '';
+    
+    // 如果图片已经是 base64 格式，直接返回
+    if (img.src && img.src.startsWith('data:image/')) {
+      return img.src.replace(/^data:image\/(png|jpg);base64,/, '');
+    }
+    
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
     canvas.height = img.height;
@@ -219,8 +234,193 @@ const Page = () => {
 
     return dataURL.replace(/^data:image\/(png|jpg);base64,/, '');
   };
-  const onPredicted = (images: HTMLImageElement) => {
-    const imgBase64 = getBase64Image(images);
+
+  // 通过后端API获取图片的base64
+  const fetchImageAsBase64 = async (dataId: number): Promise<string> => {
+    if (!dataId) {
+      throw new Error(`Invalid dataId: ${dataId}`);
+    }
+    try {
+      const response = await fetch(`${baseUrl}/api/datas/${dataId}/image`);
+      if (!response.ok) {
+        throw new Error(`获取图片失败: ${response.status}`);
+      }
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // 移除 data:image/...;base64, 前缀
+          const base64 = result.replace(/^data:image\/[a-z]+;base64,/, '');
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('获取图片base64失败:', error);
+      throw error;
+    }
+  };
+
+  // 获取所有图片数据（仅用现有API，不依赖后端批量接口）
+  /**
+   * 获取所有图片数据（仅用现有API，不依赖后端批量接口）
+   * @param projectId 项目ID
+   */
+  async function getAllDatasByProjectId(projectId: string): Promise<any[]> {
+    let allDatas: any[] = [];
+
+    // 使用配置的后端URL
+    const backendUrl = baseUrl.replace(/\/$/, ''); // 移除末尾的斜杠
+    console.log(`[getAllDatasByProjectId] 使用后端URL: ${backendUrl}`);
+
+    try {
+      // 直接使用fetch调用后端API，避免ProjectApi的配置问题
+      console.log(`[getAllDatasByProjectId] 请求后端: ${backendUrl}/api/projects/${projectId}/tasks`);
+      const response = await fetch(`${backendUrl}/api/projects/${projectId}/tasks`);
+      if (!response.ok) {
+        throw new Error(`获取任务失败: ${response.status}`);
+      }
+      const tasks = await response.json();
+      console.log('[getAllDatasByProjectId] 获取到任务:', tasks);
+      console.log('[getAllDatasByProjectId] 任务数量:', tasks.length);
+
+      // 遍历每个任务，获取其数据
+      for (const taskItem of tasks) {
+        console.log('[getAllDatasByProjectId] 处理任务:', taskItem);
+        const realTaskId = taskItem.task_id;
+        if (realTaskId) {
+          try {
+            console.log(`[getAllDatasByProjectId] 获取任务 ${realTaskId} 的数据`);
+            const datasResponse = await fetch(`${backendUrl}/api/tasks/${realTaskId}/datas`);
+            if (!datasResponse.ok) {
+              console.error(`获取任务 ${realTaskId} 数据失败: ${datasResponse.status}`);
+              continue;
+            }
+            const datas = await datasResponse.json();
+            console.log(`[getAllDatasByProjectId] 任务${realTaskId}数据:`, datas);
+            console.log(`[getAllDatasByProjectId] 任务${realTaskId}数据数量:`, datas.length);
+            allDatas.push(...datas);
+          } catch (error) {
+            console.error(`[getAllDatasByProjectId] 获取任务${realTaskId}数据失败:`, error);
+          }
+        } else {
+          console.warn('[getAllDatasByProjectId] 任务缺少 task_id 字段:', taskItem);
+        }
+      }
+    } catch (error) {
+      console.error('[getAllDatasByProjectId] 获取任务失败:', error);
+      return [];
+    }
+    console.log(`[getAllDatasByProjectId] 总共获取到 ${allDatas.length} 个数据`);
+    return allDatas;
+  }
+
+  const runBatchInference = async () => {
+    if (!inferenceEnabled || !selectedService) {
+      message.error('请先配置推理服务');
+      return;
+    }
+
+    // 获取项目ID
+    const projectIdStr = serviceUtils.getQueryVariable('projectId');
+    if (!projectIdStr) {
+      message.error('无法获取项目ID');
+      return;
+    }
+    const projectId = parseInt(projectIdStr, 10);
+    if (isNaN(projectId)) {
+      message.error('项目ID无效');
+      return;
+    }
+
+    try {
+      // 获取所有数据
+      const allDatas = await getAllDatasByProjectId(projectId.toString());
+      if (allDatas.length === 0) {
+        message.error('项目中没有数据');
+        return;
+      }
+
+      setBatchInferenceTotal(allDatas.length);
+      setBatchInferenceProgress(0);
+      setBatchInferenceVisible(true);
+
+      // 逐一处理每个数据
+      for (let i = 0; i < allDatas.length; i++) {
+        const dataItem = allDatas[i];
+        if (!dataItem.data_id) {
+          console.error('dataItem.data_id is undefined', dataItem);
+          continue;
+        }
+        setBatchInferenceCurrent(dataItem.path || `数据 ${i + 1}`);
+        try {
+          // 获取图片base64
+          const imgBase64 = await fetchImageAsBase64(dataItem.data_id);
+          // 进行推理
+          await performInference(imgBase64, dataItem.data_id);
+          setBatchInferenceProgress(i + 1);
+        } catch (error) {
+          console.error(`推理数据 ${dataItem.data_id} 失败:`, error);
+          // 继续处理下一个数据
+        }
+      }
+
+      message.success('批量推理完成');
+    } catch (error) {
+      console.error('批量推理失败:', error);
+      message.error('批量推理失败');
+    } finally {
+      setBatchInferenceVisible(false);
+    }
+  };
+
+  // 执行推理的辅助函数
+  const performInference = async (imgBase64: string, dataId: number) => {
+    return new Promise<void>((resolve, reject) => {
+      const thresholdRaw = threshold ? threshold : 0.5;
+      if (selectedService === 'custom' && mlBackendUrl) {
+        fetch(`${mlBackendUrl}/infer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image: imgBase64,
+            conf_threshold: thresholdRaw
+          })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(async (data: any) => {
+          if (data && data.detections) {
+            const predictions = data.detections.map((detection: any) => ({
+              score: detection.confidence,
+              result: detection.bbox, // [x1, y1, x2, y2]
+              label_name: detection.label
+            })).filter((item: any) => item.score > thresholdRaw);
+            // 创建标注
+            if (predictions.length > 0) {
+              await createBatchAnnotations(dataId, predictions);
+            }
+            resolve();
+          } else {
+            throw new Error('Invalid response format');
+          }
+        })
+        .catch(reject);
+      } else {
+        // 预设服务的情况 - 这里需要根据实际API调整
+        reject(new Error('预设服务批量推理暂未实现'));
+      }
+    });
+  };
+  const onPredicted = (imgBase64: string) => {
     const thresholdRaw = threshold ? threshold : 0.5;
     
     // 直接调用自定义后端的 /infer API
@@ -248,7 +448,7 @@ const Page = () => {
             result: detection.bbox, // [x1, y1, x2, y2]
             label_name: detection.label
           })).filter((item: any) => item.score > thresholdRaw);
-          setIsLoad(false);
+          setIsLoading(false);
           // 安全检查：确保data.all存在且有元素
           if (data.all && data.all.length > 0 && data.all[0]?.dataId) {
             data.updatePredicted(data.all[0].dataId.toString(), true);
@@ -291,7 +491,7 @@ const Page = () => {
                       return item;
                     }
                   });
-                  setIsLoad(false);
+                  setIsLoading(false);
                   if (data.all[0]?.dataId) {
                     data.updatePredicted(data.all[0].dataId.toString(), true);
                   }
@@ -316,6 +516,68 @@ const Page = () => {
           },
         );
       }
+    }
+  };
+  const createBatchAnnotations = async (dataId: number, predictions: any[]) => {
+    // 从URL参数获取项目ID
+    const projectIdStr = serviceUtils.getQueryVariable('projectId');
+    if (!projectIdStr) return;
+    const projectId = parseInt(projectIdStr, 10);
+    if (isNaN(projectId)) return;
+    
+    // 获取项目标签
+    const labels = new Map();
+    const labelAll = await label.getAll(projectId);
+    for (const labelItem of labelAll) {
+      labels.set(labelItem.name, labelItem);
+    }
+
+    const annos: any[] = [];
+    const labelMapping = new Map();
+    let frontendId = annotation.all?.length ? getMaxFrontendId(annotation.all) + 1 : 1;
+
+    if (otherSetting?.labelMapping?.length > 0) {
+      for (const labelMaps of otherSetting.labelMapping) {
+        labelMapping.set(labelMaps.model, labelMaps.project);
+      }
+    }
+
+    predictions.map((item: any) => {
+      if (item) {
+        let name = '';
+        if (labelMapping.has(item.label_name)) {
+          name = labelMapping.get(item.label_name);
+        } else {
+          name = item.label_name;
+        }
+        let labelitem = labels.get(name);
+        if (!labelitem) {
+          console.warn(`标签 "${name}" 不存在，跳过此预测结果`);
+          return; // 跳过这个预测结果
+        }
+        const result = Array.isArray(item.result) ? item.result.join(',') : item.result;
+        const predictedBy = otherSetting?.modelName || 'custom-ml-backend';
+
+        // 创建标注对象
+        const anno = {
+          frontendId: frontendId,
+          result: result,
+          dataId: dataId,
+          labelId: labelitem.labelId,
+          label: labelitem,
+          predictedBy: predictedBy,
+          type: 'rectangle',
+          annotationId: undefined,
+        };
+        annos.push(anno);
+        frontendId++;
+      }
+    });
+
+    if (annos.length > 0) {
+      // 使用 annotation API 创建标注
+      await annotation.create(annos, '', true);
+      console.log(`为数据 ${dataId} 创建了 ${annos.length} 个标注`);
     }
   };
   const createLabels = (labels: any) => {
@@ -350,13 +612,13 @@ const Page = () => {
       // data.updatePredicted(data.all[0].dataId);
       if (data.all[0].predicted) {
         const flag = false;
-        if (flag !== isLoad) {
-          setIsLoad(flag);
+        if (flag !== isLoading) {
+          setIsLoading(flag);
         }
       } else {
         const flag = true;
-        if (flag !== isLoad) {
-          setIsLoad(flag);
+        if (flag !== isLoading) {
+          setIsLoading(flag);
         }
       }
     }
@@ -368,7 +630,7 @@ const Page = () => {
   }, [isClick]);
 
   useUpdateEffect(() => {
-    if (isLoad && project.curr?.otherSettings?.labelMapping && isLoading) {
+    if (isLoading && project.curr?.otherSettings?.labelMapping && isLoading) {
       if (model.loading) {
         message.error(tbIntl('modelLoading'));
         return;
@@ -392,14 +654,14 @@ const Page = () => {
     } else {
       setotherSetting(project.curr?.otherSettings ?? undefined);
     }
-  }, [isLoad, project.curr?.otherSettings]);
+  }, [isLoading, project.curr?.otherSettings]);
   useUpdateEffect(() => {
-    const predictflag = !isLoading && image && isLoad;
+    const predictflag = !isLoading && image && isLoading;
     // debugger;
     if (predictflag) {
-      onPredicted(image);
+      onPredicted(getBase64Image(image));
     }
-  }, [isLoading, isLoad, image]);
+  }, [isLoading, isLoading, image]);
   useUpdateEffect(() => {
     // console.log('interactorData.predictData', otherSetting, interactorData.predictData.length);
     if (interactorData.predictData.length && otherSetting?.labelMapping && label.all) {
@@ -434,19 +696,23 @@ const Page = () => {
     }
   }, [interactorData, otherSetting]);
   useUpdateEffect(() => {
+    // 从URL获取项目ID
+    const projectIdStr = serviceUtils.getQueryVariable('projectId');
+    const projectId = projectIdStr ? parseInt(projectIdStr, 10) : undefined;
+    
     console.log('useUpdateEffect triggered:', {
       predictDataLength: interactorData.predictData.length,
-      projectId: project.curr?.projectId,
+      projectId: projectId,
       flags: flags
     });
     if (
       interactorData.predictData.length &&
-      project.curr?.projectId !== undefined &&
+      projectId !== undefined &&
       flags
     ) {
       console.log('条件满足，开始创建标注');
       const labels = new Map();
-      label.getAll(project.curr.projectId).then((labelAll) => {
+      label.getAll(projectId).then((labelAll) => {
         // debugger;
         for (const labelItem of labelAll) {
           labels.set(labelItem.name, labelItem);
@@ -488,8 +754,8 @@ const Page = () => {
                 predictedBy,
                 'rectangle',
               );
-              anno.type = 'rectangle';
               if (anno) {
+                anno.type = 'rectangle';
                 annos.push(anno);
                 frontendId++;
               }
@@ -511,7 +777,7 @@ const Page = () => {
         });
       });
     }
-  }, [project?.curr?.projectId, interactorData.predictData, otherSetting, flags]);
+  }, [interactorData.predictData, otherSetting, flags]);
   // const scaleChange = (curr,index)=>{
   //   scale.change(curr);
   //   scale.setScales
@@ -585,108 +851,74 @@ const Page = () => {
       setHideLabel(ids);
     }
   };
+
   return (
     <PPLabelPageContainer className={styles.det}>
-      <PPToolBar>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/rectangle.png"
-          active={tool.curr == 'rectangle'}
-          onClick={() => {
-            if (!label.curr) {
-              message.error(tbIntl('chooseCategoryFirst'));
-              return;
+      <BatchInferenceModal
+        visible={batchInferenceVisible}
+        progress={batchInferenceProgress}
+        total={batchInferenceTotal}
+        current={batchInferenceCurrent}
+      />
+      <LeftBar
+        tool={tool}
+        scale={scale}
+        annotation={annotation}
+        data={data}
+        label={label}
+        annHistory={annHistory}
+        tbIntl={tbIntl}
+        setCurrentAnnotation={setCurrentAnnotation}
+        setPreTools={setPreTools}
+        setInteractorData={setInteractorData}
+        setflags={setflags}
+        serviceUtils={serviceUtils}
+        project={project}
+        onClearAllAnnotations={async () => {
+          // 从URL参数获取项目ID
+          const projectIdStr = serviceUtils.getQueryVariable('projectId');
+          if (!projectIdStr) {
+            message.error('无法获取项目ID，请确保URL中包含projectId参数');
+            return;
+          }
+          const projectId = parseInt(projectIdStr, 10);
+          if (isNaN(projectId)) {
+            message.error('项目ID无效');
+            return;
+          }
+          try {
+            const dataApi = new DataApi();
+            const projectApi = new ProjectApi();
+            // 获取项目的所有任务
+            const tasks = await projectApi.getTasks(projectId.toString());
+            let totalDeleted = 0;
+            for (const task of tasks) {
+              if (task.taskId) {
+                // 获取任务的所有数据
+                const datas = await new TaskApi().getDatas(task.taskId);
+                for (const dataItem of datas) {
+                  if (dataItem.dataId) {
+                    try {
+                      await dataApi.deleteAnnotations(dataItem.dataId.toString());
+                      totalDeleted++;
+                    } catch (error) {
+                      console.error(`删除数据 ${dataItem.dataId} 标注失败:`, error);
+                    }
+                  }
+                }
+              }
             }
-            tool.setCurr('rectangle');
-            setPreTools('rectangle');
-            setCurrentAnnotation(undefined);
-          }}
-        >
-          {tbIntl('rectangle')}
-        </PPToolBarButton>
-        {/* <PPToolBarButton
-          active={tool.curr == 'editor'}
-          imgSrc="./pics/buttons/edit.png"
-          onClick={() => {
-            tool.setCurr('editor');
-            setPreTools('editor');
-          }}
-        >
-          {tbIntl('edit')}
-        </PPToolBarButton> */}
-        <PPToolBarButton
-          imgSrc="./pics/buttons/zoom_in.png"
-          onClick={() => {
-            scale.change(0.1);
-          }}
-        >
-          {tbIntl('zoomIn')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/zoom_out.png"
-          onClick={() => {
-            scale.change(-0.1);
-          }}
-        >
-          {tbIntl('zoomOut')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/save.png"
-          onClick={() => {
-            annotation.pushToBackend(data.curr?.dataId);
-          }}
-        >
-          {tbIntl('save')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/move.png"
-          active={tool.curr == 'mover'}
-          onClick={() => {
-            tool.setCurr('mover');
-            setPreTools('mover');
-          }}
-        >
-          {tbIntl('move')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/prev.png"
-          onClick={() => {
-            annHistory.backward().then((res) => {
-              if (res) {
-                annotation.setAll(res.annos);
-                setCurrentAnnotation(res.currAnno);
-                annotation.pushToBackend(data.curr?.dataId, res.annos);
-              }
-            });
-          }}
-        >
-          {tbIntl('unDo')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/next.png"
-          onClick={() => {
-            annHistory.forward().then((res) => {
-              if (res) {
-                annotation.pushToBackend(data.curr?.dataId, res.annos);
-                setCurrentAnnotation(res.currAnno);
-              }
-            });
-          }}
-        >
-          {tbIntl('reDo')}
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/clear_mark.png"
-          onClick={() => {
-            annotation.clear();
-            annHistory.record({ annos: [] });
-            tool.setCurr(undefined);
-            setPreTools('');
-            label.setCurr(undefined);
-          }}
-        >
-          {tbIntl('clearMark')}
-        </PPToolBarButton>
-      </PPToolBar>
+            message.success(`成功清空 ${totalDeleted} 个数据的标注`);
+            // 刷新当前数据
+            if (data.curr?.dataId) {
+              annotation.getAll(data.curr.dataId);
+            }
+          } catch (error) {
+            console.error('清空全部标注失败:', error);
+            message.error('清空全部标注失败');
+          }
+        }}
+      />
       <div id="dr" className="mainStage" onWheel={handleWheel}>
         <Spin tip="loading" spinning={!!loading.curr}>
           <Keyevent
@@ -731,66 +963,25 @@ const Page = () => {
               />
             </div>
           </Keyevent>
-          <div
-            className="pblock"
-            style={{
-              display: 'flex',
+          <TaskNavigator
+            task={task}
+            project={project}
+            tbIntl={tbIntl}
+            onPrev={() => {
+              if (!task.prevTask()) return;
+              setInteractorData({ active: false, predictData: [], mousePoints: [] });
+              setCurrentAnnotation(undefined);
+              setflags(false);
+              page?.current?.setDragEndPos({ x: 0, y: 0 });
             }}
-          >
-            <div
-              className="preButton"
-              style={{
-                background: 'blue',
-                color: 'white',
-                width: '100px',
-                textAlign: 'center',
-                lineHeight: '2.55rem',
-              }}
-              onClick={() => {
-                if (!task.prevTask()) {
-                  return;
-                }
-                // scale.setCurr(1);
-                setInteractorData({ active: false, predictData: [], mousePoints: [] });
-                setCurrentAnnotation(undefined);
-                setflags(false);
-                page?.current?.setDragEndPos({
-                  x: 0,
-                  y: 0,
-                });
-              }}
-            >
-              {tbIntl('prevTask')}
-            </div>
-            <PPProgress task={task} project={project} />
-            <div
-              className="nextButton"
-              style={{
-                background: 'blue',
-                color: 'white',
-                width: '100px',
-                textAlign: 'center',
-                lineHeight: '2.55rem',
-              }}
-              onClick={() => {
-                if (!task.nextTask()) {
-                  return;
-                }
-                // scale.setCurr(1);
-                // debugger;
-
-                setInteractorData({ active: false, predictData: [], mousePoints: [] });
-                setCurrentAnnotation(undefined);
-                setflags(false);
-                page?.current?.setDragEndPos({
-                  x: 0,
-                  y: 0,
-                });
-              }}
-            >
-              {tbIntl('nextTask')}
-            </div>
-          </div>
+            onNext={() => {
+              if (!task.nextTask()) return;
+              setInteractorData({ active: false, predictData: [], mousePoints: [] });
+              setCurrentAnnotation(undefined);
+              setflags(false);
+              page?.current?.setDragEndPos({ x: 0, y: 0 });
+            }}
+          />
           {/* <div
             className="prevTask"
             data-test-id="prevTask"
@@ -828,7 +1019,7 @@ const Page = () => {
         </Spin>
       </div>
       <PPToolBar disLoc="right">
-        <InferenceConfig
+        <InferenceConfigPanel
           inferenceEnabled={inferenceEnabled}
           setInferenceEnabled={setInferenceEnabled}
           selectedService={selectedService}
@@ -844,14 +1035,13 @@ const Page = () => {
           showInferConfig={showInferConfig}
           setShowInferConfig={setShowInferConfig}
         />
-        <PPToolBarButton
-          imgSrc="./pics/buttons/export.png"
-          disabled={
-            !inferenceEnabled || 
-            !selectedService || 
-            (selectedService === 'custom' && !mlBackendUrl)
-          }
-          onClick={async () => {
+        <InferenceActions
+          inferenceEnabled={inferenceEnabled}
+          selectedService={selectedService}
+          mlBackendUrl={mlBackendUrl}
+          selectedModel={selectedModel}
+          uploadedModelFile={uploadedModelFile}
+          onImportLabels={async () => {
             if (selectedService === 'custom' && mlBackendUrl) {
               try {
                 const response = await fetch(`${mlBackendUrl}/labels`);
@@ -873,17 +1063,7 @@ const Page = () => {
               message.error('请先配置有效的自定义服务');
             }
           }}
-        >
-          导入标签
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/save.png"
-          disabled={
-            !inferenceEnabled || 
-            !selectedService || 
-            (selectedService === 'custom' && !mlBackendUrl)
-          }
-          onClick={async () => {
+          onLoadModel={async () => {
             if (selectedService === 'custom' && mlBackendUrl) {
               try {
                 const response = await fetch(`${mlBackendUrl}/load`, {
@@ -892,8 +1072,8 @@ const Page = () => {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    model_path: 'Source/model.pdmodel', // 使用PaddlePaddle模型文件
-                    labels_path: 'Source/infer_cfg.yml' // 可选的标签文件
+                    model_path: 'Source/model.pdmodel',
+                    labels_path: 'Source/infer_cfg.yml'
                   })
                 });
                 if (response.ok) {
@@ -913,17 +1093,7 @@ const Page = () => {
               message.error('请先配置有效的自定义服务');
             }
           }}
-        >
-          加载模型
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/clear_mark.png"
-          disabled={
-            !inferenceEnabled || 
-            !selectedService || 
-            (selectedService === 'custom' && !mlBackendUrl)
-          }
-          onClick={async () => {
+          onUnloadModel={async () => {
             if (selectedService === 'custom' && mlBackendUrl) {
               try {
                 const response = await fetch(`${mlBackendUrl}/unload`, {
@@ -946,62 +1116,32 @@ const Page = () => {
               message.error('请先配置有效的自定义服务');
             }
           }}
-        >
-          卸载模型
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/intelligent_interaction.png"
-          disabled={
-            !inferenceEnabled || 
-            !selectedService || 
-            (selectedService === 'custom' && !mlBackendUrl) ||
-            (selectedService === 'preset' && (!selectedModel || !uploadedModelFile))
-          }
-          onClick={() => {
+          onRunInference={() => {
             if (inferenceEnabled && selectedService && image) {
               if (selectedService === 'custom' && mlBackendUrl) {
                 model.setMlBackendUrl(mlBackendUrl);
-                onPredicted(image);
+                onPredicted(getBase64Image(image));
               } else if (selectedService === 'preset' && selectedModel && uploadedModelFile) {
-                // 这里处理预设模型服务的推理逻辑
-                message.info(`使用预设模型 ${selectedModel} 进行推理`);
-                // TODO: 实现预设模型推理逻辑
+                onPredicted(getBase64Image(image));
               }
             }
           }}
-        >
-          执行推理
-        </PPToolBarButton>
-        {/* 推理全部按钮 */}
-        <PPToolBarButton
-          imgSrc="./pics/buttons/intelligent_interaction.png"
-          disabled={
-            !inferenceEnabled || 
-            !selectedService || 
-            (selectedService === 'custom' && !mlBackendUrl) ||
-            (selectedService === 'preset' && (!selectedModel || !uploadedModelFile))
-          }
-          onClick={() => {
+          onRunBatchInference={async () => {
             if (inferenceEnabled && selectedService) {
               if (selectedService === 'custom' && mlBackendUrl) {
                 model.setMlBackendUrl(mlBackendUrl);
-                message.info('推理全部功能待实现');
+                runBatchInference();
               } else if (selectedService === 'preset' && selectedModel && uploadedModelFile) {
                 message.info(`使用预设模型 ${selectedModel} 推理全部功能待实现`);
               }
             }
           }}
-        >
-          推理全部
-        </PPToolBarButton>
-        <PPToolBarButton
-          imgSrc="./pics/buttons/data_division.png"
-          onClick={() => {
-            history.push(`/project_overview?projectId=${project.curr.projectId}`);
+          onProjectOverview={() => {
+            const projectId = serviceUtils.getQueryVariable('projectId');
+            history.push(`/project_overview?projectId=${projectId}`);
           }}
-        >
-          {tbIntl('projectOverview')}
-        </PPToolBarButton>
+          tbIntl={tbIntl}
+        />
         {/* <PPToolBarButton
           imgSrc="./pics/buttons/data_division.png"
           onClick={() => {
@@ -1023,41 +1163,11 @@ const Page = () => {
         </PPAIButton> */}
       </PPToolBar>
       <div className="rightSideBar">
-        <PPLabelList
-          labels={label.all}
-          activeIds={label.activeIds}
-          onLabelSelect={label.onSelect}
-          onLabelDelete={label.remove}
-          // disabled={otherSetting?.labelMapping?.length > 0}
-          disabled={false}
-          onLabelAdd={(lab) => {
-            label.create({ ...lab, projectId: project.curr.projectId }).then((newLabel) => {
-              setCurrentAnnotation(undefined);
-              label.setCurr(newLabel);
-            });
-          }}
+        <RightBar
+          label={label}
+          annotation={annotation}
+          setCurrentAnnotation={setCurrentAnnotation}
           onHideLabel={onHideLabel}
-        />
-        <PPAnnotationList
-          disabled={false}
-          type={'Detection'}
-          currAnnotation={annotation.curr}
-          annotations={annotation.all}
-          onAnnotationSelect={(selectedAnno) => {
-            if (!selectedAnno?.delete) setCurrentAnnotation(selectedAnno);
-            setAnnotation(selectedAnno);
-            // console.log('selectedAnno', selectedAnno);
-          }}
-          onAnnotationAdd={() => {
-            console.log('onAnnotationAdd');
-            setCurrentAnnotation(undefined);
-          }}
-          onAnnotationModify={() => {}}
-          onAnnotationDelete={(anno: Annotation) => {
-            annotation.setAll(annotation.all.filter((x) => x.frontendId != anno.frontendId));
-            setCurrentAnnotation(undefined);
-            annotation.remove(anno);
-          }}
         />
       </div>
     </PPLabelPageContainer>
