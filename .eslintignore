@@ -1,0 +1,10 @@
+/lambda/
+/scripts
+/config
+/cypress
+cypress.config.ts
+.history
+public
+dist
+.umi
+mock
