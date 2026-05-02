@@ -1,6 +1,7 @@
 # Web related
 connexion>=3.0.6
 marshmallow_sqlalchemy>=1.0.0
+marshmallow<3.21
 pydantic>=2.5.3
 sqlalchemy>=1.4.46
 

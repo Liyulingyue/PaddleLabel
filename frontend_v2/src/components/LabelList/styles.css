@@ -1,0 +1,20 @@
+.label-list {
+  padding: 8px;
+}
+
+.label-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.label-list .ant-list-item {
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.label-list .ant-list-item.selected {
+  background: #e6f7ff;
+}

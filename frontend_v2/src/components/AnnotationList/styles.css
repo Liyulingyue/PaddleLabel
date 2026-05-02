@@ -1,0 +1,16 @@
+.annotation-list {
+  padding: 8px;
+}
+
+.annotation-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-weight: 500;
+}
+
+.annotation-list .ant-list-item {
+  cursor: pointer;
+  padding: 4px 8px;
+}
