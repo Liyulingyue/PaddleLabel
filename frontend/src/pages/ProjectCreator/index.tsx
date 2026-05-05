@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Tree, Spin, message, Select } from 'antd';
 import type { TreeDataNode } from 'antd';
 import { FolderOpenOutlined, FileTextOutlined, FolderOutlined, CheckCircleFilled, AimOutlined, SearchOutlined } from '@ant-design/icons';
@@ -22,7 +22,7 @@ const createInfo: Record<string, { labelKey: string; avatar: string; id: number;
     labelKey: 'global.classification',
     avatar: '/pics/classification.jpg',
     id: 1,
-    labelFormats: { single_class: 'Single Class', multi_class: 'Multi Class' },
+    labelFormats: { singleClass: 'Single Class', multiClass: 'Multi Class' },
     desc: 'Categorize images into classes',
   },
   detection: {
@@ -36,36 +36,35 @@ const createInfo: Record<string, { labelKey: string; avatar: string; id: number;
     labelKey: 'global.semanticSegmentation',
     avatar: '/pics/semantic_segmentation.jpg',
     id: 3,
-    labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: 'EISeg' },
+    labelFormats: { mask: 'Mask', coco: 'COCO', eiseg: 'EISeg' },
     desc: 'Pixel-level semantic segmentation',
   },
   instanceSegmentation: {
     labelKey: 'global.instanceSegmentation',
     avatar: '/pics/instance_segmentation.jpg',
     id: 4,
-    labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: 'EISeg' },
+    labelFormats: { mask: 'Mask', coco: 'COCO', eiseg: 'EISeg' },
     desc: 'Instance-level segmentation',
   },
   opticalCharacterRecognition: {
     labelKey: 'global.opticalCharacterRecognition',
     avatar: '/pics/ocr.png',
     id: 7,
-    labelFormats: { txt: 'txt' },
+    labelFormats: { txt: 'PPOCRLabel Txt', json: 'JSON' },
     desc: 'Extract text from images',
   },
-};
-
-const snake2camel = (name: string) => {
-  if (!name) return name;
-  return name.toLowerCase().replace(/([-_][a-z])/g, (group) => group.toUpperCase().replace('-', '').replace('_', ''));
+  point: {
+    labelKey: 'global.point',
+    avatar: '/pics/point.jpg',
+    id: 8,
+    desc: 'Point annotation',
+  },
 };
 
 const camel2snake = (name: string) => {
   if (!name) return name;
   return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 };
-
-const formatKey = (key: string) => key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 function arrayToTree(items: { name: string; type: string }[], parentPath = ''): TreeDataNode[] {
   return items.map(item => {
@@ -83,30 +82,39 @@ function arrayToTree(items: { name: string; type: string }[], parentPath = ''): 
   });
 }
 
+const TASK_CATEGORY_OPTIONS = [
+  { key: 'classification', labelKey: 'global.classification', color: '#722ed1' },
+  { key: 'detection', labelKey: 'global.detection', color: '#fa8c16' },
+  { key: 'semanticSegmentation', labelKey: 'global.semanticSegmentation', color: '#1890ff' },
+  { key: 'instanceSegmentation', labelKey: 'global.instanceSegmentation', color: '#52c41a' },
+  { key: 'opticalCharacterRecognition', labelKey: 'global.opticalCharacterRecognition', color: '#eb2f96' },
+  { key: 'point', labelKey: 'global.point', color: '#fa541c' },
+];
+
 export default function ProjectCreator() {
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const taskCategory = searchParams.get('taskCategory') || 'classification';
-  const projectIdParam = searchParams.get('projectId');
+
+  const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const projectIdParam = urlParams.get('projectId');
+  const taskCategoryParam = urlParams.get('taskCategory');
   const [projectId, setProjectId] = useState<number | undefined>(projectIdParam ? Number(projectIdParam) : undefined);
   const [loading, setLoading] = useState(false);
   const [sampleFiles, setSampleFiles] = useState<TreeDataNode[]>([]);
-  const [importOptions, setImportOptions] = useState<ImportOption[]>([]);
   const [existingProject, setExistingProject] = useState<Project | null>(null);
   const [form] = Form.useForm();
   const [dirBrowserOpen, setDirBrowserOpen] = useState(false);
 
-  useEffect(() => {
-    if (taskCategory) {
-      ProjectApi.getOptions(taskCategory, 'import').then(setImportOptions).catch(() => {});
-    }
-  }, [taskCategory]);
+  const [taskCategory, setTaskCategory] = useState(taskCategoryParam || 'classification');
+  const info = createInfo[taskCategory] || { labelKey: `global.${taskCategory}`, id: 0, desc: '' };
+  const labelFormats = info.labelFormats || {};
 
   useEffect(() => {
     if (!projectId) return;
     ProjectApi.get(projectId).then(proj => {
       setExistingProject(proj);
+      const tc = proj.taskCategory?.name || 'classification';
+      setTaskCategory(tc);
       form.setFieldsValue({
         name: proj.name,
         description: proj.description,
@@ -115,8 +123,18 @@ export default function ProjectCreator() {
     });
   }, [projectId]);
 
+  useEffect(() => {
+    if (projectId) return;
+    form.setFieldValue('labelFormat', undefined);
+    setSampleFiles([]);
+  }, [taskCategory]);
+
+  const handleTaskCategoryChange = (cat: string) => {
+    setTaskCategory(cat);
+  };
+
   const handleLabelFormatChange = (format: string) => {
-    const samplePath = `bear/${taskCategory}/${snake2camel(format)}/`;
+    const samplePath = `bear/${taskCategory}/${format}/`;
     fetch(`/api/samples/structure?path=${encodeURIComponent(samplePath)}`)
       .then(res => res.json())
       .then(data => {
@@ -143,8 +161,8 @@ export default function ProjectCreator() {
     try {
       const allOptions: Record<string, string> = {};
       if (taskCategory === 'classification' && values.labelFormat) {
-        allOptions.clasSubCatg = values.labelFormat === 'single_class' ? 'singleClass' : 'multiClass';
-        allOptions.labelFormat = values.labelFormat === 'single_class' ? 'singleClassFolder' : 'multiClassList';
+        allOptions.clasSubCatg = values.labelFormat;
+        allOptions.labelFormat = values.labelFormat === 'singleClass' ? 'singleClassFolder' : 'multiClassList';
       } else if (values.labelFormat) {
         allOptions.labelFormat = values.labelFormat;
       }
@@ -170,9 +188,6 @@ export default function ProjectCreator() {
       setLoading(false);
     }
   };
-
-  const info = createInfo[taskCategory] || { labelKey: `global.${taskCategory}`, id: 0, desc: '' };
-  const labelFormats = info.labelFormats || {};
 
   return (
     <div className="project-creator">
@@ -202,6 +217,24 @@ export default function ProjectCreator() {
                   className="pc-form"
                 >
                   <div className="pc-form-fields">
+                    {!projectId && (
+                      <Form.Item
+                        name="taskCategory"
+                        label={t('component.PPCreator.taskCategory')}
+                        initialValue="classification"
+                        rules={[{ required: true }]}
+                      >
+                        <Select
+                          size="large"
+                          onChange={handleTaskCategoryChange}
+                          options={TASK_CATEGORY_OPTIONS.map(o => ({
+                            value: o.key,
+                            label: t(o.labelKey),
+                          }))}
+                        />
+                      </Form.Item>
+                    )}
+
                     <Form.Item
                       name="name"
                       label={t('component.PPCreator.projectName')}
@@ -244,12 +277,7 @@ export default function ProjectCreator() {
                     {Object.keys(labelFormats).length > 0 && !projectId && (
                       <Form.Item
                         name="labelFormat"
-                        label={
-                          taskCategory === 'classification'
-                            ? t('component.PPCreator.classificationSubcategory')
-                            : t('component.PPCreator.labelFormat_')
-                        }
-                        rules={[{ required: taskCategory === 'classification', message: t('component.PPCreator.chooseClasSubcatg') }]}
+                        label={t('component.PPCreator.labelFormat_')}
                       >
                         <Select
                           size="large"
@@ -260,8 +288,7 @@ export default function ProjectCreator() {
                             label: (
                               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <CheckCircleFilled style={{ color: '#1890ff', fontSize: 13 }} />
-                                <span style={{ fontWeight: 500 }}>{t('global.labelFormat.' + formatKey(k)) || k}</span>
-                                {v && <span style={{ color: '#8c8c8c', fontSize: 12, marginLeft: 4 }}>{v}</span>}
+                                <span style={{ fontWeight: 500 }}>{t('global.labelFormat.' + k) || v}</span>
                               </span>
                             ),
                           }))}
@@ -302,15 +329,13 @@ export default function ProjectCreator() {
                 {sampleFiles.length > 0 ? (
                   <Tree
                     className="pc-tree"
-                    showLine={{ showLeafIcon: false }}
-                    onSelect={onTreeSelect}
                     treeData={sampleFiles}
-                    blockNode
+                    showIcon
+                    onSelect={onTreeSelect}
                   />
                 ) : (
-                  <div className="pc-tree-empty">
-                    <FolderOpenOutlined style={{ fontSize: 36, color: '#d0d7de', marginBottom: 8 }} />
-                    <p>{t('component.PPCreator.selectLabelFormatView')}</p>
+                  <div style={{ padding: 16, color: '#8c8c8c' }}>
+                    {t('component.PPCreator.selectFormatToPreview')}
                   </div>
                 )}
               </div>
@@ -318,12 +343,14 @@ export default function ProjectCreator() {
           </div>
         </div>
 
-        <DirectoryBrowser
-          open={dirBrowserOpen}
-          onClose={() => setDirBrowserOpen(false)}
-          onSelect={handleSelectDirectory}
-          initialPath={form.getFieldValue('dataDir')}
-        />
+        {dirBrowserOpen && (
+          <DirectoryBrowser
+            open={dirBrowserOpen}
+            onClose={() => setDirBrowserOpen(false)}
+            onSelect={handleSelectDirectory}
+            initialPath={form.getFieldValue('dataDir')}
+          />
+        )}
       </Spin>
     </div>
   );

@@ -1,6 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Layout as AntLayout, Button, Dropdown } from 'antd';
-import { PlusOutlined, GlobalOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { PlusOutlined, GlobalOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useUserStore } from '@/stores/userStore';
 
@@ -41,10 +41,7 @@ export default function AppLayout() {
           <Dropdown menu={{ items: langItems, onClick: ({ key }) => i18n.changeLanguage(key) }} placement="bottomRight">
             <Button icon={<GlobalOutlined />}>{langLabel}</Button>
           </Dropdown>
-          <Button icon={<FolderOpenOutlined />} onClick={() => navigate('/sample_projects')}>
-            {t('pages.menus.sampleProjects')}
-          </Button>
-          <Dropdown menu={{ items: createItems, onClick: ({ key }) => navigate(`/project/create?taskCategory=${key}`) }} placement="bottomRight">
+          <Dropdown menu={{ items: createItems, onClick: ({ key }) => navigate(`/project/create`) }} placement="bottomRight">
             <Button type="primary" icon={<PlusOutlined />}>
               {t('pages.welcome.createProject')}
             </Button>

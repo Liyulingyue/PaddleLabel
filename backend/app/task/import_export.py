@@ -51,42 +51,46 @@ def run_import(project_id: int, data_dir: str | None = None, all_options: dict |
 
 def run_export(project_id: int, export_dir: str, export_format: str | None = None, seg_mask_type: str | None = None):
     with flask_app.app_context():
-        with flask_db.session.begin_nested():
-            from paddlelabel.api.model import Project, TaskCategory
+        from paddlelabel.api.model import Project, TaskCategory
 
-            project = flask_db.session.query(Project).filter(Project.project_id == project_id).first()
-            if project is None:
-                raise RuntimeError(f"No project with project_id {project_id}")
+        project = flask_db.session.query(Project).filter(Project.project_id == project_id).first()
+        if project is None:
+            raise RuntimeError(f"No project with project_id {project_id}")
 
-            task_category = flask_db.session.query(TaskCategory).filter(
-                TaskCategory.task_category_id == project.task_category_id
-            ).first()
-            if task_category is None:
-                raise RuntimeError(f"Invalid task category id {project.task_category_id}")
+        task_category = flask_db.session.query(TaskCategory).filter(
+            TaskCategory.task_category_id == project.task_category_id
+        ).first()
+        if task_category is None:
+            raise RuntimeError(f"Invalid task category id {project.task_category_id}")
 
-            module_name = f"paddlelabel.task.{task_category.name}"
-            module = __import__(module_name, fromlist=["ProjectSubtypeSelector"])
-            selector = module.ProjectSubtypeSelector()
-            
-            # Use default_handler with is_export=True
-            if selector.default_handler is None:
-                raise RuntimeError(f"No default_handler for task category {task_category.name}")
-            
-            handler = selector.default_handler(project=project, is_export=True)
+        module_name = f"paddlelabel.task.{task_category.name}"
+        module = __import__(module_name, fromlist=["ProjectSubtypeSelector"])
+        selector = module.ProjectSubtypeSelector()
+        
+        if selector.default_handler is None:
+            raise RuntimeError(f"No default_handler for task category {task_category.name}")
+        
+        handler = selector.default_handler(project=project, is_export=True)
 
-            if export_format is None or len(export_format) == 0:
-                exporter = getattr(handler, "default_exporter", None)
-                if exporter is None:
-                    return
-            else:
-                exporters = getattr(handler, "exporters", {})
-                exporter = exporters.get(export_format)
-
+        if export_format is None or len(export_format) == 0:
+            exporter = getattr(handler, "default_exporter", None)
             if exporter is None:
-                return
+                raise RuntimeError(
+                    f"No default exporter for task category {task_category.name} "
+                    f"(export_format={export_format})"
+                )
+        else:
+            exporters = getattr(handler, "exporters", {})
+            exporter = exporters.get(export_format)
+            if exporter is None:
+                available = list(exporters.keys()) if exporters else ["(none)"]
+                raise RuntimeError(
+                    f"Unknown export_format '{export_format}' for task category {task_category.name}. "
+                    f"Available formats: {available}"
+                )
 
-            params = {"export_dir": export_dir}
-            if seg_mask_type:
-                params["seg_mask_type"] = seg_mask_type
-            exporter(**params)
-            flask_db.session.commit()
+        params = {"export_dir": export_dir}
+        if seg_mask_type:
+            params["seg_mask_type"] = seg_mask_type
+        exporter(**params)
+        flask_db.session.commit()

@@ -6,17 +6,22 @@ import type { Project } from '@/services/types';
 import { useTranslation } from 'react-i18next';
 import DirectoryBrowser from '@/components/DirectoryBrowser';
 
-const createInfo: Record<string, { labelFormats?: Record<string, string> }> = {
-  classification: { labelFormats: { single_class: 'Single Class', multi_class: 'Multi Class' } },
-  detection: { labelFormats: { coco: 'COCO', voc: 'VOC', yolo: 'YOLO' } },
-  semanticSegmentation: { labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: '' } },
-  instanceSegmentation: { labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: '' } },
-  opticalCharacterRecognition: { labelFormats: { txt: 'txt' } },
+const exportFormats: Record<string, string[]> = {
+  classification: ['singleClassFolder', 'singleClassList'],
+  detection: ['coco', 'voc', 'yolo'],
+  semanticSegmentation: ['mask', 'coco'],
+  instanceSegmentation: ['mask', 'coco'],
+  opticalCharacterRecognition: ['txt', 'json'],
+  point: ['labelme'],
 };
 
-const snake2camel = (name: string) => name?.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) || name;
+const toApiFormat: Record<string, Record<string, string>> = {
+  classification: { singleClassFolder: 'singleClassFolder', singleClassList: 'singleClassList' },
+  opticalCharacterRecognition: { json: 'json', txt: 'txt' },
+};
 
-const formatKey = (key: string) => key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+const toApiKey = (taskCategory: string, key: string) =>
+  toApiFormat[taskCategory]?.[key] ?? key;
 
 interface Props {
   project: Project | null;
@@ -32,9 +37,7 @@ export default function ExportModal({ project, visible }: Props) {
   const [form] = Form.useForm();
 
   const taskCategory = project?.taskCategory?.name || 'classification';
-  const labelFormats = createInfo[taskCategory]?.labelFormats || {};
-  const labelFormatKeys = Object.keys(labelFormats).filter(k => k !== 'eiseg');
-
+  const formats = exportFormats[taskCategory] || [];
   const defaultExportDir = project?.dataDir ? `${project.dataDir}_output` : '';
 
   const handleSelectDirectory = (path: string) => {
@@ -57,13 +60,13 @@ export default function ExportModal({ project, visible }: Props) {
           try {
             await ProjectApi.exportDataset(project!.projectId!, {
               exportDir: values.exportDir,
-              exportFormat: values.exportFormat,
+              exportFormat: toApiKey(taskCategory, values.exportFormat),
               segMaskType: values.segMaskType,
             });
             message.success(t('component.PPExportModal.exportSuccess'));
             setOpen(false);
-          } catch {
-            message.error(t('pages.tableList.addFailed'));
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail || t('pages.tableList.addFailed'));
           } finally {
             setLoading(false);
           }
@@ -78,13 +81,15 @@ export default function ExportModal({ project, visible }: Props) {
               style={{ cursor: 'pointer' }}
             />
           </Form.Item>
-          <Form.Item name="exportFormat" label={t('component.PPExportModal.labelFormat')} rules={[{ required: true, message: t('component.PPExportModal.nullLabelFormat') }]}>
-            <Radio.Group onChange={(e) => setLabelFormat(e.target.value)}>
-              {labelFormatKeys.map(k => (
-                <Radio key={k} value={k}>{t('global.labelFormat.' + formatKey(k)) || k}</Radio>
-              ))}
-            </Radio.Group>
-          </Form.Item>
+          {formats.length > 0 && (
+            <Form.Item name="exportFormat" label={t('component.PPExportModal.labelFormat')} rules={[{ required: true, message: t('component.PPExportModal.nullLabelFormat') }]}>
+              <Radio.Group onChange={(e) => setLabelFormat(e.target.value)}>
+                {formats.map(k => (
+                  <Radio key={k} value={k}>{t('global.labelFormat.' + k) || k}</Radio>
+                ))}
+              </Radio.Group>
+            </Form.Item>
+          )}
           {labelFormat === 'mask' && taskCategory === 'semanticSegmentation' && (
             <Form.Item name="segMaskType" label={t('component.PPCreator.segMaskType')}>
               <Radio.Group value="grayscale">
@@ -103,12 +108,14 @@ export default function ExportModal({ project, visible }: Props) {
         </Form>
       </Modal>
 
-      <DirectoryBrowser
-        open={dirBrowserOpen}
-        onClose={() => setDirBrowserOpen(false)}
-        onSelect={handleSelectDirectory}
-        initialPath={form.getFieldValue('exportDir')}
-      />
+      {dirBrowserOpen && (
+        <DirectoryBrowser
+          open={dirBrowserOpen}
+          onClose={() => setDirBrowserOpen(false)}
+          onSelect={handleSelectDirectory}
+          initialPath={form.getFieldValue('exportDir') || defaultExportDir}
+        />
+      )}
     </span>
   );
 }

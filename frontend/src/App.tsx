@@ -8,7 +8,6 @@ import Classification from './pages/Classification';
 import SemanticSegmentation from './pages/SemanticSegmentation';
 import Ocr from './pages/Ocr';
 import ML from './pages/ML';
-import SampleProjects from './pages/SampleProjects';
 
 export default function App() {
   return (
@@ -16,8 +15,6 @@ export default function App() {
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Welcome />} />
         <Route path="welcome" element={<Welcome />} />
-        <Route path="sample_projects" element={<SampleProjects />} />
-        <Route path="sample_project" element={<SampleProjects />} />
         <Route path="project_overview" element={<ProjectOverview />} />
         <Route path="project_detail" element={<ProjectCreator />} />
         <Route path="project/create" element={<ProjectCreator />} />
@@ -26,6 +23,7 @@ export default function App() {
         <Route path="instance_segmentation" element={<SemanticSegmentation />} />
         <Route path="detection" element={<Detection />} />
         <Route path="optical_character_recognition" element={<Ocr />} />
+        <Route path="point" element={<Ocr />} />
         <Route path="project_ai" element={<ML />} />
         <Route path="project_ocr_ai" element={<ML />} />
         <Route path="ml" element={<ML />} />

@@ -6,17 +6,22 @@ import type { Project } from '@/services/types';
 import { useTranslation } from 'react-i18next';
 import DirectoryBrowser from '@/components/DirectoryBrowser';
 
-const createInfo: Record<string, { labelFormats?: Record<string, string> }> = {
-  classification: { labelFormats: { single_class: 'Single Class', multi_class: 'Multi Class' } },
-  detection: { labelFormats: { coco: 'COCO', voc: 'VOC', yolo: 'YOLO' } },
-  semanticSegmentation: { labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: '' } },
-  instanceSegmentation: { labelFormats: { mask: 'Mask', coco: 'Polygon', eiseg: '' } },
-  opticalCharacterRecognition: { labelFormats: { txt: 'txt' } },
+const importFormats: Record<string, string[]> = {
+  classification: ['singleClassFolder', 'singleClassList', 'multiClassList'],
+  detection: ['coco', 'voc', 'yolo'],
+  semanticSegmentation: ['mask', 'coco', 'eiseg'],
+  instanceSegmentation: ['mask', 'coco', 'eiseg'],
+  opticalCharacterRecognition: ['txt', 'json'],
+  point: ['labelme'],
 };
 
-const snake2camel = (name: string) => name?.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) || name;
+const toApiFormat: Record<string, Record<string, string>> = {
+  classification: { singleClassFolder: 'singleClassFolder', singleClassList: 'singleClassList', multiClassList: 'multiClassList' },
+  opticalCharacterRecognition: { json: 'json', txt: 'txt' },
+};
 
-const formatKey = (key: string) => key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+const toApiKey = (taskCategory: string, key: string) =>
+  toApiFormat[taskCategory]?.[key] ?? key;
 
 interface Props {
   project: Project | null;
@@ -32,17 +37,13 @@ export default function ImportModal({ project, onFinish, visible }: Props) {
   const [form] = Form.useForm();
 
   const taskCategory = project?.taskCategory?.name || 'classification';
-  const labelFormats = createInfo[taskCategory]?.labelFormats || {};
-  const labelFormatKeys = Object.keys(labelFormats);
-
-  const show = visible !== undefined ? visible : false;
-  const canShow = show || !labelFormatKeys.length;
+  const formats = importFormats[taskCategory] || [];
 
   const handleSelectDirectory = (path: string) => {
     form.setFieldValue('path', path);
   };
 
-  if (!canShow && !labelFormatKeys.length) return null;
+  if (!visible && !formats.length) return null;
 
   return (
     <span>
@@ -51,11 +52,14 @@ export default function ImportModal({ project, onFinish, visible }: Props) {
         <Form form={form} layout="horizontal" onFinish={async (values) => {
           setLoading(true);
           try {
-            await ProjectApi.importDataset(project!.projectId!, { importDir: values.path, importFormat: values.labelFormat });
+            await ProjectApi.importDataset(project!.projectId!, {
+              importDir: values.path,
+              importFormat: toApiKey(taskCategory, values.labelFormat || ''),
+            });
             setOpen(false);
             onFinish?.();
-          } catch {
-            message.error(t('pages.tableList.addFailed'));
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail || t('pages.tableList.addFailed'));
           } finally {
             setLoading(false);
           }
@@ -70,11 +74,11 @@ export default function ImportModal({ project, onFinish, visible }: Props) {
               style={{ cursor: 'pointer' }}
             />
           </Form.Item>
-          {labelFormatKeys.length > 0 && (
+          {formats.length > 0 && (
             <Form.Item name="labelFormat" label={t('component.PPImportModal.labelFormat')}>
               <Radio.Group>
-                {labelFormatKeys.map(k => (
-                  <Radio key={k} value={k}>{t('global.labelFormat.' + formatKey(k)) || k}</Radio>
+                {formats.map(k => (
+                  <Radio key={k} value={k}>{t('global.labelFormat.' + k) || k}</Radio>
                 ))}
               </Radio.Group>
             </Form.Item>
@@ -88,12 +92,14 @@ export default function ImportModal({ project, onFinish, visible }: Props) {
         </Form>
       </Modal>
 
-      <DirectoryBrowser
-        open={dirBrowserOpen}
-        onClose={() => setDirBrowserOpen(false)}
-        onSelect={handleSelectDirectory}
-        initialPath={form.getFieldValue('path')}
-      />
+      {dirBrowserOpen && (
+        <DirectoryBrowser
+          open={dirBrowserOpen}
+          onClose={() => setDirBrowserOpen(false)}
+          onSelect={handleSelectDirectory}
+          initialPath={form.getFieldValue('path') || ''}
+        />
+      )}
     </span>
   );
 }

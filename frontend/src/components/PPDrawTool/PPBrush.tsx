@@ -107,7 +107,10 @@ function getTool(currentTool: ToolType, mouseButton: number): ToolType {
 }
 
 export default function PPBrush(props: PPDrawToolProps): PPDrawToolRet {
-  let finlyResult = '';
+  let currentLine: number[] = [];
+  let currentFrontendId = 0;
+  let currentWidth = 0;
+  let currentType: ToolType = 'brush';
 
   const OnMouseDown = (param: EvtProps) => {
     if ((props.currentTool !== 'brush' && props.currentTool !== 'rubber') || !props.brushSize) return;
@@ -115,25 +118,19 @@ export default function PPBrush(props: PPDrawToolProps): PPDrawToolRet {
     const mouseY = param.mouseY;
     const tool = getTool(props.currentTool, param.e.evt.button);
 
-    let frontendId: number;
-    if (props.finlyList && props.finlyList.length > 0 && props.selectFinly) {
-      frontendId = props.selectFinly.frontendId ?? getMaxFrontendId(props.finlyList) + 1;
-    } else if (props.finlyList && props.finlyList.length > 0 && !props.selectFinly) {
-      frontendId = getMaxFrontendId(props.finlyList) + 1;
-    } else if (props.finlyList?.length === 0 && !props.selectFinly) {
-      frontendId = props.frontendIdOps.frontendId > 0 ? props.frontendIdOps.frontendId : getMaxFrontendId(props.annotations) + 1;
-    } else {
-      frontendId = props.frontendIdOps.frontendId > 0 ? props.frontendIdOps.frontendId : getMaxFrontendId(props.annotations) + 1;
-    }
-
-    if (frontendId !== props.frontendIdOps.frontendId) props.frontendIdOps.setFrontendId(frontendId);
+    currentFrontendId = props.frontendIdOps.frontendId > 0 
+      ? props.frontendIdOps.frontendId 
+      : getMaxFrontendId(props.annotations) + 1;
+    currentWidth = props.brushSize;
+    currentType = tool;
+    currentLine = [mouseX, mouseY];
 
     const line = createLine({
-      width: props.brushSize || 10,
+      width: currentWidth,
       color: tool === 'brush' ? (props.currentLabel?.color || 'blue') : '',
-      points: [mouseX, mouseY, mouseX, mouseY],
+      points: currentLine,
       type: tool,
-      frontendId,
+      frontendId: currentFrontendId,
     });
     if (!line) return;
 
@@ -142,7 +139,7 @@ export default function PPBrush(props: PPDrawToolProps): PPDrawToolRet {
         dataId: props.dataId,
         label: props.currentLabel,
         labelId: props.currentLabel?.labelId,
-        frontendId,
+        frontendId: currentFrontendId,
         result: line,
         type: 'brush',
       };
@@ -152,26 +149,51 @@ export default function PPBrush(props: PPDrawToolProps): PPDrawToolRet {
         dataId: props.dataId,
         label: props.currentAnnotation?.label || props.labels?.[0],
         labelId: props.currentAnnotation?.labelId || props.labels?.[0]?.labelId,
-        frontendId,
+        frontendId: currentFrontendId,
         result: line,
         type: 'rubber',
       };
       props.onAnnotationAdd(anno);
     }
-    finlyResult = line;
   };
 
-  const OnMouseMove = (_param: EvtProps) => {
-    // handled in PPStage
+  const OnMouseMove = (param: EvtProps) => {
+    if (currentLine.length === 0) return;
+    currentLine.push(param.mouseX, param.mouseY);
+    
+    const line = createLine({
+      width: currentWidth,
+      color: currentType === 'brush' ? (props.currentLabel?.color || 'blue') : '',
+      points: currentLine,
+      type: currentType,
+      frontendId: currentFrontendId,
+    });
+    if (!line) return;
+
+    const LastAnnotation = props.annotations?.[props.annotations.length - 1];
+    if (LastAnnotation && props.onAnnotationupdata) {
+      props.onAnnotationupdata({ ...LastAnnotation, result: line });
+    }
   };
 
   const OnMouseUp = (_param: EvtProps) => {
-    if (!finlyResult) return;
-    const LastAnnotations = props.annotations?.[props.annotations.length - 1];
-    if (LastAnnotations && props.onAnnotationupdata) {
-      props.onAnnotationupdata({ ...LastAnnotations, result: finlyResult });
+    if (currentLine.length === 0) return;
+    
+    const line = createLine({
+      width: currentWidth,
+      color: currentType === 'brush' ? (props.currentLabel?.color || 'blue') : '',
+      points: currentLine,
+      type: currentType,
+      frontendId: currentFrontendId,
+    });
+
+    const LastAnnotation = props.annotations?.[props.annotations.length - 1];
+    if (LastAnnotation && props.onAnnotationupdata) {
+      props.onAnnotationupdata({ ...LastAnnotation, result: line });
     }
-    finlyResult = '';
+
+    props.frontendIdOps.setFrontendId(currentFrontendId + 1);
+    currentLine = [];
     if (props.onMouseUp) props.onMouseUp();
   };
 

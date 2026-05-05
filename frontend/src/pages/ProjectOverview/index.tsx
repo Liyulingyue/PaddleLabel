@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Table, Button, message, Card, Space } from 'antd';
+import { Table, Button, message, Card } from 'antd';
 import { ProjectApi, TaskApi } from '@/services/api';
 import type { Task, Project } from '@/services/types';
 import ImportModal from '@/components/Modals/ImportModal';
 import ExportModal from '@/components/Modals/ExportModal';
 import SplitDatasetModal from '@/components/Modals/SplitDatasetModal';
+import PageHeader from '@/components/PageHeader';
 import { useTranslation } from 'react-i18next';
 
 const SET_NAMES: Record<number, string> = {
@@ -38,6 +39,14 @@ export default function ProjectOverview() {
 
   const taskCategoryName = project?.taskCategory?.name || 'classification';
   const hasTasks = tasks.length > 0;
+  const isDetection = taskCategoryName === 'detection';
+  const isClassification = taskCategoryName === 'classification';
+  const isOCR = taskCategoryName === 'optical_character_recognition';
+
+  const reloadTasks = () => {
+    ProjectApi.getTasks(Number(projectId)).then(setTasks);
+    setUpdateTable(prev => prev + 1);
+  };
 
   const columns = [
     {
@@ -80,73 +89,50 @@ export default function ProjectOverview() {
     },
   ];
 
-  const isDetection = taskCategoryName === 'detection';
-  const isClassification = taskCategoryName === 'classification';
-  const isOCR = taskCategoryName === 'optical_character_recognition';
+  const headerActions = (
+    <>
+      <Button
+        type="primary"
+        onClick={() => navigate(`/${taskCategoryName}?projectId=${projectId}`)}
+        disabled={!hasTasks}
+      >
+        {t('pages.welcome.label')}
+      </Button>
+      <Button
+        onClick={() => navigate(`/project/create?projectId=${projectId}`)}
+      >
+        {t('pages.projectOverview.projectSettings')}
+      </Button>
+      <SplitDatasetModal projectId={Number(projectId)} visible={hasTasks} onFinish={reloadTasks} />
+      <ExportModal project={project} visible={hasTasks} />
+      <ImportModal project={project} visible={hasTasks} onFinish={reloadTasks} />
+      {(isDetection || isClassification || isOCR) && (
+        <Button
+          onClick={() => {
+            const path = isOCR ? '/project_ocr_ai' : '/project_ai';
+            navigate(`${path}?projectId=${projectId}`);
+          }}
+        >
+          {t('pages.projectOverview.autoInferenceSettings')}
+        </Button>
+      )}
+    </>
+  );
 
   return (
-    <div style={{ padding: 24 }}>
-      <Card>
-        <Space style={{ marginBottom: 16 }} wrap>
-          <Button
-            type="primary"
-            onClick={() => navigate(`/${taskCategoryName}?projectId=${projectId}`)}
-            disabled={!hasTasks}
-          >
-            {t('pages.welcome.label')}
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => navigate(`/project/create?taskCategory=${taskCategoryName}&projectId=${projectId}`)}
-          >
-            {t('pages.projectOverview.projectSettings')}
-          </Button>
-          <SplitDatasetModal projectId={Number(projectId)} visible={hasTasks} onFinish={() => {
-            ProjectApi.getTasks(Number(projectId)).then(setTasks);
-          }} />
-          <ExportModal project={project} visible={hasTasks} />
-          <ImportModal
-            project={project}
-            visible={hasTasks}
-            onFinish={() => {
-              ProjectApi.getTasks(Number(projectId)).then(setTasks);
-              setUpdateTable(prev => prev + 1);
-            }}
-          />
-          {(isDetection || isClassification || isOCR) && (
-            <Button
-              type="primary"
-              onClick={() => {
-                const path = isOCR ? '/project_ocr_ai' : '/project_ai';
-                navigate(`${path}?taskCategory=${taskCategoryName}&projectId=${projectId}`);
-              }}
-            >
-              {t('pages.projectOverview.autoInferenceSettings')}
-            </Button>
-          )}
-        </Space>
-      </Card>
-
-      <Card title={`${t('pages.projectOverview.tasks')} (${tasks.length})`} style={{ marginTop: 16 }}>
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+      <PageHeader projectId={projectId} actions={headerActions} showBack={false} />
+      
+      <Card title={`${t('pages.projectOverview.tasks')} (${tasks.length})`}>
         {!hasTasks ? (
-          <ImportModal
-            project={project}
-            onFinish={() => {
-              ProjectApi.getTasks(Number(projectId)).then(setTasks);
-              setUpdateTable(prev => prev + 1);
-            }}
-          />
+          <ImportModal project={project} onFinish={reloadTasks} />
         ) : (
           <span key={updateTable}>
             <Table
               columns={columns}
               dataSource={[...tasks]}
               rowKey="taskId"
-              onChange={(pagination, filters, sorter: any) => {
-                if (sorter.field && sorter.order) {
-                  localStorage.setItem('orderBy', sorter.field + ' ' + sorter.order);
-                }
-              }}
+              pagination={false}
             />
           </span>
         )}

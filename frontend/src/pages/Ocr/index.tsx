@@ -1,12 +1,12 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Spin, message, Button, Modal, Input, ColorPicker, List, Popconfirm, Table, Breadcrumb } from 'antd';
-import { HomeOutlined } from '@ant-design/icons';
+import { Spin, message, Button, Modal, Input, ColorPicker, List, Popconfirm, Table } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import PPStage, { pageRef } from '@/components/PPStage';
 import { ProjectApi, TaskApi, DataApi, LabelApi } from '@/services/api';
 import type { Annotation, Label, Task, Data } from '@/services/types';
 import { useTranslation } from 'react-i18next';
 import PPToolBarButton from '@/components/PPToolBarButton';
+import PageHeader from '@/components/PageHeader';
 import PPRectangle from '@/components/PPDrawTool/PPRectangle';
 import PPPolygon from '@/components/PPDrawTool/PPPolygon';
 import './index.css';
@@ -184,14 +184,7 @@ export default function Ocr() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Breadcrumb
-        style={{ marginBottom: 12, flexShrink: 0 }}
-        items={[
-          { title: <HomeOutlined onClick={() => navigate('/')} style={{ cursor: 'pointer' }} /> },
-          { title: <span onClick={() => navigate(`/project_overview?projectId=${projectId}`)} style={{ cursor: 'pointer' }}>{t('pages.toolBar.projectOverview')}</span> },
-          { title: t('global.opticalCharacterRecognition') },
-        ]}
-      />
+      <PageHeader projectId={projectId} categoryLabel={t('global.opticalCharacterRecognition')} />
       <div className="labelPageContainer">
       {/* Left Toolbar */}
       <div className="toolbarLeft">
@@ -294,16 +287,6 @@ export default function Ocr() {
             </div>
           </div>
         </Spin>
-      </div>
-
-      {/* Right Toolbar (top) */}
-      <div className="toolbarRight">
-        <PPToolBarButton
-          imgSrc={`${BTN}data_division.png`}
-          onClick={() => navigate(`/project_overview?projectId=${projectId}`)}
-        >
-          {t('pages.toolBar.projectOverview')}
-        </PPToolBarButton>
       </div>
 
       {/* Right Sidebar */}

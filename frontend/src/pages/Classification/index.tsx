@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Spin, message, Button, Modal, Input, ColorPicker, Popconfirm, List, Breadcrumb } from 'antd';
-import { HomeOutlined } from '@ant-design/icons';
+import { Spin, message, Button, Modal, Input, ColorPicker, Popconfirm, List } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import PPStage from '@/components/PPStage';
 import { ProjectApi, TaskApi, DataApi, LabelApi } from '@/services/api';
 import type { Annotation, Label, Task, Data, Project } from '@/services/types';
 import { useTranslation } from 'react-i18next';
 import PPToolBarButton from '@/components/PPToolBarButton';
+import PageHeader from '@/components/PageHeader';
 
 const BTN = '/pics/buttons/';
 
@@ -188,14 +188,7 @@ export default function Classification() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Breadcrumb
-        style={{ marginBottom: 12, flexShrink: 0 }}
-        items={[
-          { title: <HomeOutlined onClick={() => navigate('/')} style={{ cursor: 'pointer' }} /> },
-          { title: <span onClick={() => navigate(`/project_overview?projectId=${projectId}`)} style={{ cursor: 'pointer' }}>{t('pages.toolBar.projectOverview')}</span> },
-          { title: t('global.classification') },
-        ]}
-      />
+      <PageHeader projectId={projectId} categoryLabel={t('global.classification')} />
       <div className="labelPageContainer">
       {/* Left Toolbar */}
       <div className="toolbarLeft">

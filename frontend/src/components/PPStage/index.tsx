@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useState, useImperativeHandle, useCallback } from 'react';
 import { Layer, Stage, Image as KonvaImage } from 'react-konva';
+import { message } from 'antd';
 import useImage from 'use-image';
 import type { Annotation, Label, ToolType } from '@/services/types';
 import type { PPDrawToolRet, PPRenderFuncProps } from '../PPDrawTool/drawUtils';
@@ -285,6 +286,11 @@ const PPStage = forwardRef<pageRef, PPStageProps>((props, ref) => {
   };
 
   const onMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const isDrawTool = ['rectangle', 'polygon', 'brush'].includes(props.currentTool as string);
+    if (isDrawTool && !props.currentLabel) {
+      message.warning('Please select a label first');
+      return;
+    }
     if (e.evt.button === 1) {
       if (props.currentTool === 'polygon') {
         props.changePreTools?.('polygon');
