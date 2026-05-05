@@ -1,4 +1,33 @@
+# FastAPI backend
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.9
+
+# Database
+sqlalchemy>=1.4.46
+alembic>=1.13.1
+
+# Pydantic
+pydantic>=2.5.3
+
+# Flask (for paddlelabel legacy code)
+flask>=2.3.0
+flask_sqlalchemy>=3.0.5
+flask_marshmallow>=1.2.1
+flask_cors>=4.0.0
+connexion[flask,uvicorn]>=3.0.6
+marshmallow_sqlalchemy>=1.0.0
+marshmallow<3.21
+
+# Image processing
+opencv-python
+Pillow
+numpy>=1.26.3
+pycocotoolse
+tifffile
+
+# Utils
+tqdm
+prompt_toolkit
+aiohttp
