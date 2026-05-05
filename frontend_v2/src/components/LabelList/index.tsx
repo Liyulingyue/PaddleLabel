@@ -1,57 +1,74 @@
-import { useLabelStore } from '@/stores/labelStore';
-import { List, Tag, Button, Space, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { FormattedMessage } from 'react-intl';
-import type { Label } from '@/types';
+import { List, Button, Spin } from 'antd';
+import type { Label } from '@/services/types';
+import ColorBall from '../ColorBall';
+import AddLabelModal from '../Modals/AddLabelModal';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
-  projectId: number;
+  labels?: Label[];
+  activeIds?: Set<number>;
+  selectedLabel?: Label;
+  hideEye?: boolean;
+  hideColorPicker?: boolean;
+  onLabelModify?: (label: Label) => void;
+  onLabelDelete: (label: Label) => void;
+  onLabelAdd: (label: Label) => void;
+  onLabelSelect: (label: Label) => void;
+  onHideLabel?: (change: boolean, id: number) => void;
+  disabled?: boolean;
+  refresh?: number;
 }
 
-export default function LabelList({ projectId }: Props) {
-  const { labels, selectedLabel, selectLabel, createLabel, removeLabel } = useLabelStore();
-
-  const handleAdd = async () => {
-    const colors = ['#ff4d4f', '#52c41a', '#1890ff', '#faad14', '#722ed1', '#eb2f96'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    const name = `Label ${labels.length + 1}`;
-    await createLabel(projectId, { name, color: randomColor });
-  };
-
-  const handleDelete = async (label: Label) => {
-    const id = label.label_id || label.id;
-    if (id) {
-      await removeLabel(projectId, id);
-    }
-  };
+export default function LabelList({ labels = [], activeIds, selectedLabel, hideEye, hideColorPicker, onLabelModify, onLabelDelete, onLabelAdd, onLabelSelect, onHideLabel, disabled }: Props) {
+  const { t } = useTranslation();
+  const [addModalVisible, setAddLabelModalVisible] = useState(false);
 
   return (
-    <div className="label-list">
-      <div className="label-list-header">
-        <span><FormattedMessage id="project.labels" /></span>
-        <Button type="text" size="small" icon={<PlusOutlined />} onClick={handleAdd} />
-      </div>
+    <>
       <List
-        size="small"
+        size="large"
+        header={<div>{t('component.PPLabelList.labelList')}</div>}
+        bordered
         dataSource={labels}
-        renderItem={(label) => (
+        renderItem={(item) => (
           <List.Item
-            className={selectedLabel?.label_id === label.label_id || selectedLabel?.id === label.id ? 'selected' : ''}
-            onClick={() => selectLabel(label)}
-            actions={[
-              <Popconfirm
-                key="delete"
-                title="Delete this label?"
-                onConfirm={() => handleDelete(label)}
-              >
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            ]}
+            style={{
+              cursor: disabled ? 'default' : 'pointer',
+              background: activeIds?.has(item.labelId!) ? '#e6f7ff' : 'transparent',
+              padding: '8px 12px',
+            }}
+            onClick={() => !disabled && onLabelSelect(item)}
           >
-            <Tag color={label.color}>{label.name}</Tag>
+            <span style={{ flex: 1 }}>{item.name}</span>
+            {!hideColorPicker && <ColorBall color={item.color} />}
+            <Button
+              size="small"
+              danger
+              onClick={(e) => {
+                e.stopPropagation();
+                onLabelDelete(item);
+              }}
+              style={{ marginLeft: 8 }}
+            >{t('component.label.delete')}</Button>
           </List.Item>
         )}
+        footer={
+          <div>
+            <Button type="primary" disabled={disabled} onClick={() => setAddLabelModalVisible(true)} block>{t('component.PPLabelList.addLabel')}</Button>
+          </div>
+        }
       />
-    </div>
+      <AddLabelModal
+        visible={addModalVisible}
+        order={labels.length}
+        hideColorPicker={hideColorPicker}
+        onLabelAdd={(label) => {
+          onLabelAdd(label);
+          setAddLabelModalVisible(false);
+        }}
+        onCancel={() => setAddLabelModalVisible(false)}
+      />
+    </>
   );
 }

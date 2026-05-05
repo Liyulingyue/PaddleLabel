@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
+from typing import Optional, Annotated
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices
 
 
-class LabelSchema(BaseModel):
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LabelSchema(BaseSchema):
     label_id: int | None = None
     project_id: int | None = None
     id: int | None = None
@@ -15,28 +19,19 @@ class LabelSchema(BaseModel):
     created: datetime | None = None
     modified: datetime | None = None
 
-    class Config:
-        from_attributes = True
 
-
-class TaskCategorySchema(BaseModel):
+class TaskCategorySchema(BaseSchema):
     task_category_id: int | None = None
     name: str | None = None
-    handler: str | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
-
-    class Config:
-        from_attributes = True
 
 
-class ProjectBase(BaseModel):
+class ProjectBase(BaseSchema):
     name: str | None = None
     description: str | None = None
-    data_dir: str | None = None
-    task_category_id: int | None = None
-    other_settings: dict | None = None
-    all_options: dict | None = Field(None, exclude=True)
+    data_dir: Annotated[str | None, Field(validation_alias='dataDir')] = None
+    task_category_id: Annotated[int | None, Field(validation_alias='taskCategoryId')] = None
+    other_settings: Annotated[dict | None, Field(validation_alias='otherSettings')] = None
+    all_options: Annotated[dict | None, Field(validation_alias='allOptions')] = None
 
 
 class ProjectCreate(ProjectBase):

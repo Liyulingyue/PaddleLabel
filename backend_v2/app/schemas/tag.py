@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class TagBase(BaseModel):
+class BaseTagSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TagBase(BaseTagSchema):
     project_id: int | None = None
     name: str | None = None
     color: str | None = None

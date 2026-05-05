@@ -1,123 +1,496 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { Layout, Spin, message } from 'antd';
-import Toolbar from '@/components/Toolbar';
-import LabelList from '@/components/LabelList';
-import AnnotationList from '@/components/AnnotationList';
-import ImageNav from '@/components/ImageNav';
-import PPStage from '@/components/PPStage';
-import { useProjectStore } from '@/stores/projectStore';
-import { useLabelStore } from '@/stores/labelStore';
-import { useAnnotationStore } from '@/stores/annotationStore';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { Spin, message, Button, Modal, Input, ColorPicker, List, Popconfirm, Breadcrumb } from 'antd';
+import { HomeOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import PPStage, { pageRef } from '@/components/PPStage';
+import { ProjectApi, TaskApi, DataApi, LabelApi } from '@/services/api';
 import { useImage } from '@/hooks/useImage';
-import { getProjectTasks } from '@/api/project';
-import { getTaskDatas } from '@/api/task';
-import type { Task, Data, Annotation } from '@/types';
+import type { Annotation, Label, Task, Data } from '@/services/types';
+import { useTranslation } from 'react-i18next';
+import PPToolBarButton from '@/components/PPToolBarButton';
+import PPRectangle from '@/components/PPDrawTool/PPRectangle';
+import './index.css';
 
-const { Sider, Content } = Layout;
+const BTN = '/pics/buttons/';
 
 export default function Detection() {
-  const { id } = useParams<{ id: string }>();
-  const { fetchProject } = useProjectStore();
-  const { fetchLabels } = useLabelStore();
-  const { annotations, fetchAnnotations, addAnnotation, updateAnnotation, removeAnnotation, saveAnnotation } = useAnnotationStore();
-
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [datas, setDatas] = useState<Data[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [allDatas, setAllDatas] = useState<Data[]>([]);
+  const [currIdx, setCurrIdx] = useState(0);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [selectedLabel, setSelectedLabel] = useState<Label | undefined>();
+  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | undefined>();
+  const [currentTool, setCurrentTool] = useState<string>('rectangle');
+  const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [frontendId, setFrontendId] = useState(0);
+  const [addLabelModalOpen, setAddLabelModalOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState('');
+  const [newLabelColor, setNewLabelColor] = useState('#1890ff');
+  const [saving, setSaving] = useState(false);
+  const annotationsRef = useRef<Annotation[]>([]);
 
-  const currentData = datas[currentIndex] || null;
-  const { image, imageUrl, loading: imageLoading } = useImage(currentData?.data_id || null, currentData?.sault);
+  const pageRef = useRef<pageRef>(null);
+  const projectId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('projectId') ?? '';
+
+  const currentData = allDatas[currIdx];
+  const imgSrc = currentData?.dataId
+    ? `/api/datas/${currentData.dataId}/image?sault=${currentData.sault}`
+    : '';
 
   useEffect(() => {
-    if (id) {
-      const projectId = Number(id);
-      fetchProject(projectId);
-      fetchLabels(projectId);
-      loadTasks(projectId);
-    }
-  }, [id, fetchProject, fetchLabels]);
-
-  const loadTasks = async (projectId: number) => {
+    if (!projectId) return;
+    const pid = Number(projectId);
     setLoading(true);
-    try {
-      const taskList = await getProjectTasks(projectId);
+    ProjectApi.getTasks(pid).then((taskList) => {
       setTasks(taskList);
-
-      const allDatas: Data[] = [];
-      for (const task of taskList) {
-        try {
-          const taskDatas = await getTaskDatas(task.task_id);
-          allDatas.push(...taskDatas);
-        } catch {}
+      if (taskList.length > 0) {
+        const taskId = taskList[0].taskId!;
+        TaskApi.getDatas(taskId).then((datas) => {
+          const datasWithTaskId = datas.map(d => ({ ...d, taskId }));
+          setAllDatas(datasWithTaskId);
+          if (datasWithTaskId.length > 0 && datasWithTaskId[0].dataId) {
+            DataApi.getAnnotations(datasWithTaskId[0].dataId!).then(setAnnotations);
+          }
+        });
       }
-      setDatas(allDatas);
-    } catch {}
+    });
+    ProjectApi.getLabels(pid).then(setLabels);
     setLoading(false);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (currentData?.dataId) {
+      DataApi.getAnnotations(currentData.dataId).then(setAnnotations);
+      setSelectedAnnotation(undefined);
+    }
+  }, [currIdx, currentData?.dataId]);
+
+  const saveAnnotations = async () => {
+    if (!currentData?.dataId) {
+      console.warn('[Detection] No currentData or dataId, skipping save');
+      return;
+    }
+    setSaving(true);
+    try {
+      const annsToSave = annotationsRef.current.map(a => ({
+        dataId: currentData.dataId,
+        labelId: a.labelId!,
+        result: a.result || '',
+        type: a.type as Annotation['type'],
+      }));
+      const saved = await DataApi.setAnnotations(String(currentData.dataId), annsToSave as Annotation[]);
+      if (saved) {
+        annotationsRef.current = saved;
+        setAnnotations(saved);
+      }
+      message.success(t('pages.toolBar.saveSuccess'));
+    } catch (err: any) {
+      console.error('[Detection] Save failed:', err);
+      message.error(t('pages.detection.saveFailed') + ': ' + (err?.message || err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   useEffect(() => {
-    if (currentData?.data_id) {
-      fetchAnnotations(currentData.data_id);
-    }
-  }, [currentData, fetchAnnotations]);
+    annotationsRef.current = annotations;
+  }, [annotations]);
 
-  const handleAnnotationAdd = useCallback((annotation: Omit<Annotation, 'annotation_id'>) => {
-    addAnnotation(annotation);
-  }, [addAnnotation]);
+  const onAnnotationAdd = useCallback((anno: Annotation) => {
+    annotationsRef.current = [...annotationsRef.current, anno];
+    setAnnotations([...annotationsRef.current]);
+    setSelectedAnnotation(anno);
+  }, []);
 
-  const handleSave = async () => {
-    if (!currentData) return;
+  const onAnnotationModify = useCallback(async (anno: Annotation) => {
+    annotationsRef.current = annotationsRef.current.map(a => a.frontendId === anno.frontendId ? anno : a);
+    setAnnotations([...annotationsRef.current]);
+    if (!currentData?.dataId) return;
     try {
-      for (const annotation of annotations) {
-        await saveAnnotation(currentData.data_id, annotation);
+      const annsToSave = annotationsRef.current.map(a => ({
+        dataId: currentData.dataId,
+        labelId: a.labelId!,
+        result: a.result || '',
+        type: a.type as Annotation['type'],
+      }));
+      const saved = await DataApi.setAnnotations(String(currentData.dataId), annsToSave as Annotation[]);
+      if (saved) {
+        annotationsRef.current = saved;
+        setAnnotations(saved);
       }
-      message.success('Saved');
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+    }
+    setSelectedAnnotation(undefined);
+  }, [currentData?.dataId]);
+
+  const onAnnotationDelete = useCallback(async (anno: Annotation) => {
+    const remaining = annotationsRef.current.filter(a =>
+      a.annotationId !== anno.annotationId || a.frontendId !== anno.frontendId
+    );
+    annotationsRef.current = remaining;
+    setAnnotations(remaining);
+    if (!currentData?.dataId) return;
+    try {
+      const annsToSave = remaining.map(a => ({
+        dataId: currentData.dataId,
+        labelId: a.labelId!,
+        result: a.result || '',
+        type: a.type as Annotation['type'],
+      }));
+      await DataApi.setAnnotations(String(currentData.dataId), annsToSave as Annotation[]);
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+    }
+    setSelectedAnnotation(undefined);
+  }, [currentData?.dataId]);
+
+  const handlePrev = useCallback(() => {
+    if (currIdx > 0) {
+      saveAnnotations();
+      setCurrIdx(currIdx - 1);
+    }
+  }, [currIdx, annotations, currentData]);
+
+  const handleNext = useCallback(() => {
+    if (currIdx < allDatas.length - 1) {
+      saveAnnotations();
+      setCurrIdx(currIdx + 1);
+    }
+  }, [currIdx, annotations, currentData, allDatas.length]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'g' || e.key === 'G') handleNext();
+    else if (e.key === 'f' || e.key === 'F') handlePrev();
+    else if ((e.key === 'd' || e.key === 'D') && selectedAnnotation) onAnnotationDelete(selectedAnnotation);
+    else if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveAnnotations(); }
+  }, [handlePrev, handleNext, selectedAnnotation, onAnnotationDelete]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const drawToolParam = useMemo(() => ({
+    dataId: currentData?.dataId,
+    currentLabel: selectedLabel,
+    scale,
+    currentTool: currentTool as any,
+    annotations,
+    currentAnnotation: selectedAnnotation,
+    onAnnotationAdd,
+    onAnnotationModify,
+    onAnnotationupdata: onAnnotationModify,
+    modifyAnnoByFrontendId: onAnnotationModify,
+    onMouseUp: () => {},
+    onMouseDown: () => {},
+    frontendIdOps: { frontendId, setFrontendId },
+    pathName: window.location.pathname,
+    ChanegeTool: setCurrentTool,
+    preTool: '',
+    isLabel: '',
+  }), [currentData?.dataId, selectedLabel, scale, currentTool, annotations, selectedAnnotation, frontendId, onAnnotationAdd, onAnnotationModify]);
+
+  const drawTool = useMemo(() => ({
+    rectangle: PPRectangle(drawToolParam),
+    polygon: undefined,
+    brush: undefined,
+    rubber: undefined,
+    interactor: undefined,
+  }), [drawToolParam]);
+
+  const handleAddLabel = async () => {
+    if (!newLabelName.trim()) {
+      message.error(t('component.PPAddLabelModal.requiresLabelName'));
+      return;
+    }
+    try {
+      const created = await LabelApi.create([{ name: newLabelName.trim(), color: newLabelColor }], Number(projectId));
+      setLabels(prev => [...prev, ...created]);
+      setAddLabelModalOpen(false);
+      setNewLabelName('');
+      setNewLabelColor('#1890ff');
     } catch {
-      message.error('Save failed');
+      message.error('Failed to add label');
     }
   };
 
-  const handleNavigate = (index: number) => {
-    if (index >= 0 && index < datas.length) {
-      setCurrentIndex(index);
+  const handleDeleteLabel = async (labelId: number) => {
+    try {
+      await LabelApi.remove(labelId);
+      setLabels(prev => prev.filter(l => l.labelId !== labelId));
+      if (selectedLabel?.labelId === labelId) setSelectedLabel(undefined);
+    } catch {
+      message.error('Failed to delete label');
     }
   };
 
   if (loading) {
-    return <Spin size="large" style={{ display: 'flex', justifyContent: 'center', marginTop: 100 }} />;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 64px)' }}>
+        <Spin size="large" />
+      </div>
+    );
   }
 
-  return (
-    <Layout style={{ height: 'calc(100vh - 64px)' }}>
-      <Sider width={250} style={{ background: '#fff', overflow: 'auto' }}>
-        {id && <LabelList projectId={Number(id)} />}
-        {currentData && (
-          <AnnotationList projectId={Number(id)} dataId={currentData.data_id} />
-        )}
-      </Sider>
+  const finished = allDatas.filter(d =>
+    annotations.some(a => a.dataId === d.dataId)
+  ).length;
 
-      <Layout>
-        <Toolbar onSave={handleSave} />
-        <Content style={{ padding: 0, position: 'relative' }}>
-          {imageLoading ? (
-            <Spin style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }} />
-          ) : (
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Breadcrumb
+        style={{ marginBottom: 12, flexShrink: 0 }}
+        items={[
+          { title: <HomeOutlined onClick={() => navigate('/')} style={{ cursor: 'pointer' }} /> },
+          { title: <span onClick={() => navigate(`/project_overview?projectId=${projectId}`)} style={{ cursor: 'pointer' }}>{t('pages.toolBar.projectOverview')}</span> },
+          { title: t('global.detection') },
+        ]}
+      />
+      <div className="labelPageContainer">
+      {/* Left Toolbar */}
+      <div className="toolbarLeft">
+        <PPToolBarButton
+          imgSrc={`${BTN}rectangle.png`}
+          active={currentTool === 'rectangle'}
+          onClick={() => setCurrentTool('rectangle')}
+        >
+          {t('pages.toolBar.rectangle')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}polygon.png`}
+          active={currentTool === 'polygon'}
+          onClick={() => setCurrentTool('polygon')}
+        >
+          {t('pages.toolBar.polygon')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}zoom_in.png`}
+          onClick={() => setScale(s => Math.min(10, s + 0.1))}
+        >
+          {t('pages.toolBar.zoomIn')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}zoom_out.png`}
+          onClick={() => setScale(s => Math.max(0.1, s - 0.1))}
+        >
+          {t('pages.toolBar.zoomOut')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}save.png`}
+          onClick={saveAnnotations}
+          disabled={saving}
+        >
+          {t('pages.toolBar.save')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}move.png`}
+          active={currentTool === 'mover'}
+          onClick={() => setCurrentTool('mover')}
+        >
+          {t('pages.toolBar.move')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}clear_mark.png`}
+          onClick={() => {
+            setAnnotations([]);
+          }}
+        >
+          {t('pages.toolBar.clearMark')}
+        </PPToolBarButton>
+        <PPToolBarButton
+          imgSrc={`${BTN}edit.png`}
+          active={currentTool === 'editor'}
+          onClick={() => setCurrentTool('editor')}
+        >
+          {t('pages.toolBar.edit')}
+        </PPToolBarButton>
+      </div>
+
+      {/* Main Stage */}
+      <div id="dr" className="mainStage">
+        <Spin spinning={false}>
+          <div className="draw">
             <PPStage
-              image={image}
-              imageUrl={imageUrl}
-              data={currentData}
+              ref={pageRef}
+              scale={scale}
+              scaleChange={setScale}
+              taskIndex={currIdx}
               annotations={annotations}
-              onAnnotationAdd={handleAnnotationAdd}
-              onAnnotationUpdate={updateAnnotation}
-              onAnnotationRemove={removeAnnotation}
-              onSave={handleSave}
+              currentTool={currentTool as any}
+              currentAnnotation={selectedAnnotation}
+              currentLabel={selectedLabel}
+              labels={labels}
+              setCurrentAnnotation={(anno: Annotation | undefined) => setSelectedAnnotation(anno)}
+              onAnnotationAdd={onAnnotationAdd}
+              onAnnotationModify={onAnnotationModify}
+              onAnnotationModifyComplete={() => {}}
+              onAnnotationModifyUP={onAnnotationModify}
+              drawTool={drawTool as any}
+              frontendIdOps={{ frontendId, setFrontendId }}
+              imgSrc={imgSrc}
+              transparency={100}
+              ChanegeTool={(tool: string) => setCurrentTool(tool)}
             />
+          </div>
+          <div className="pblock">
+            <div className="preButton" onClick={handlePrev}>
+              {t('pages.toolBar.prevTask')}
+            </div>
+            <div className="progress">
+              <div className="progressBar" style={{ width: '15rem' }}>
+                <div
+                  style={{
+                    width: `${allDatas.length > 0 ? (finished / allDatas.length) * 100 : 0}%`,
+                    height: 8,
+                    background: '#1890ff',
+                    borderRadius: 4,
+                    transition: 'width 0.3s',
+                  }}
+                />
+              </div>
+              <span className="progressDesc">
+                {finished || 0}/{allDatas.length} | {currIdx + 1}/{allDatas.length}
+              </span>
+            </div>
+            <div className="nextButton" onClick={handleNext}>
+              {t('pages.toolBar.nextTask')}
+            </div>
+          </div>
+        </Spin>
+      </div>
+
+      {/* Right Toolbar (top) */}
+      <div className="toolbarRight">
+        <PPToolBarButton
+          imgSrc={`${BTN}data_division.png`}
+          onClick={() => navigate(`/project_overview?projectId=${projectId}`)}
+        >
+          {t('pages.toolBar.projectOverview')}
+        </PPToolBarButton>
+      </div>
+
+      {/* Right Sidebar */}
+      <div className="rightSideBar">
+        <List
+          className="labelList"
+          size="large"
+          header={<div className="labelListHeader">{t('component.PPLabelList.labelList')}</div>}
+          footer={
+            <div className="labelListFooter">
+              <Button
+                style={{ height: 40, fontSize: '0.75rem', width: '100%' }}
+                type="primary"
+                onClick={() => setAddLabelModalOpen(true)}
+                block
+              >
+                {t('component.PPLabelList.addLabel')}
+              </Button>
+            </div>
+          }
+          bordered
+          dataSource={labels}
+          locale={{ emptyText: t('pages.detection.noLabels') }}
+          renderItem={(item: Label) => (
+            <List.Item
+              className="annotationListItem"
+              style={{
+                background: selectedLabel?.labelId === item.labelId ? '#e6f7ff' : undefined,
+                borderLeft: `4px solid ${item.color}`,
+                padding: '0.5rem 0.813rem',
+              }}
+              onClick={() => {
+                setSelectedLabel(item);
+                setCurrentTool('rectangle');
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    backgroundColor: item.color,
+                    flexShrink: 0,
+                    marginRight: 8,
+                  }}
+                />
+                <span style={{ flex: 1, fontSize: '0.75rem' }}>{item.name}</span>
+                <Popconfirm
+                  title={`${t('global.ok')}?`}
+                  onConfirm={() => handleDeleteLabel(item.labelId!)}
+                  okText={t('global.ok')}
+                  cancelText={t('global.cancel')}
+                >
+                  <Button size="small" type="text" danger>×</Button>
+                </Popconfirm>
+              </div>
+            </List.Item>
           )}
-        </Content>
-        <ImageNav datas={datas} currentIndex={currentIndex} onNavigate={handleNavigate} />
-      </Layout>
-    </Layout>
+        />
+
+        <List
+          className="annotationList"
+          size="large"
+          header={<div className="annotationListHeader">{t('component.PPAnnotationList.annotationList')}</div>}
+          bordered
+          dataSource={annotations}
+          locale={{ emptyText: 'No annotations yet' }}
+          renderItem={(item: Annotation) => (
+            <List.Item
+              className="annotationListItem"
+              style={{
+                background: selectedAnnotation?.frontendId === item.frontendId ? '#e6f7ff' : undefined,
+                padding: '0.5rem 0.813rem',
+              }}
+              onClick={() => setSelectedAnnotation(item)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                <span style={{ fontSize: '0.75rem', flex: 1 }}>
+                  {labels.find(l => l.labelId === item.labelId)?.name || `Label ${item.labelId}`} - {item.type}
+                </span>
+                <span
+                  style={{ cursor: 'pointer', color: 'red', fontSize: 16, padding: '0 4px' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAnnotationDelete(item);
+                  }}
+                >
+                  ×
+                </span>
+              </div>
+            </List.Item>
+          )}
+        />
+      </div>
+
+      {/* Add Label Modal */}
+      <Modal
+        title={t('component.PPAddLabelModal.addLabel')}
+        open={addLabelModalOpen}
+        onOk={handleAddLabel}
+        onCancel={() => setAddLabelModalOpen(false)}
+        okText={t('global.ok')}
+        cancelText={t('global.cancel')}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8 }}>{t('component.PPAddLabelModal.labelName')}</label>
+          <Input
+            value={newLabelName}
+            onChange={e => setNewLabelName(e.target.value)}
+            placeholder={t('component.PPAddLabelModal.requiresLabelName')}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: 8 }}>{t('component.PPAddLabelModal.selectColor')}</label>
+          <ColorPicker value={newLabelColor} onChange={c => setNewLabelColor(c.toHexString())} showText />
+        </div>
+      </Modal>
+    </div>
+    </div>
   );
 }

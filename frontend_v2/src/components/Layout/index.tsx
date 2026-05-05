@@ -1,42 +1,65 @@
-import { Outlet, Link, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Button } from 'antd';
-import { HomeOutlined, PlusOutlined } from '@ant-design/icons';
+import { Outlet, useNavigate } from 'react-router-dom';
+import { Layout as AntLayout, Button, Dropdown } from 'antd';
+import { PlusOutlined, GlobalOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { useUserStore } from '@/stores/userStore';
-import { FormattedMessage } from 'react-intl';
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = AntLayout;
+
+const PROJECT_TYPES = [
+  { key: 'classification', label: 'global.classification' },
+  { key: 'detection', label: 'global.detection' },
+  { key: 'semanticSegmentation', label: 'global.semanticSegmentation' },
+  { key: 'instanceSegmentation', label: 'global.instanceSegmentation' },
+  { key: 'opticalCharacterRecognition', label: 'global.opticalCharacterRecognition' },
+];
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const { user, logout } = useUserStore();
+  const { t, i18n } = useTranslation();
 
-  const menuItems = [
-    { key: '/', icon: <HomeOutlined />, label: <FormattedMessage id="welcome.projects" /> },
+  const langLabel = i18n.language === 'zh' ? '中文' : 'EN';
+
+  const langItems = [
+    { key: 'en', label: 'EN' },
+    { key: 'zh', label: '中文' },
   ];
 
+  const createItems = PROJECT_TYPES.map(p => ({
+    key: p.key,
+    label: t(p.label),
+  }));
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <AntLayout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#001529', padding: '0 24px' }}>
-        <div style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>PaddleLabel</div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/project/create')}>
-            <FormattedMessage id="welcome.createProject" />
+        <div style={{ color: 'white', fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }} onClick={() => navigate('/')}>
+          PaddleLabel
+        </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <Dropdown menu={{ items: langItems, onClick: ({ key }) => i18n.changeLanguage(key) }} placement="bottomRight">
+            <Button icon={<GlobalOutlined />}>{langLabel}</Button>
+          </Dropdown>
+          <Button icon={<FolderOpenOutlined />} onClick={() => navigate('/sample_projects')}>
+            {t('pages.menus.sampleProjects')}
           </Button>
+          <Dropdown menu={{ items: createItems, onClick: ({ key }) => navigate(`/project/create?taskCategory=${key}`) }} placement="bottomRight">
+            <Button type="primary" icon={<PlusOutlined />}>
+              {t('pages.welcome.createProject')}
+            </Button>
+          </Dropdown>
           {user && (
-            <Button onClick={logout}>Logout</Button>
+            <Button onClick={logout}>{t('component.globalHeader.logout')}</Button>
           )}
         </div>
       </Header>
-      <Layout>
-        <Sider width={200} style={{ background: '#fff' }}>
-          <Menu mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={({ key }) => navigate(key)} />
-        </Sider>
-        <Layout style={{ padding: '0 24px 24px' }}>
-          <Content style={{ marginTop: 24 }}>
-            <Outlet />
-          </Content>
-        </Layout>
-      </Layout>
-    </Layout>
+      <Content style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '0 24px 24px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Outlet />
+        </div>
+      </Content>
+    </AntLayout>
   );
 }
+

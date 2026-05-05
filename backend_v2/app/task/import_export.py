@@ -10,44 +10,43 @@ logger = logging.getLogger("paddlelabel")
 
 def run_import(project_id: int, data_dir: str | None = None, all_options: dict | None = None):
     with flask_app.app_context():
-        with flask_db.session.begin_nested():
-            from paddlelabel.api.model import Project, TaskCategory
+        from paddlelabel.api.model import Project, TaskCategory
 
-            project = flask_db.session.query(Project).filter(Project.project_id == project_id).first()
-            if project is None:
-                raise RuntimeError(f"No project with project_id {project_id}")
+        project = flask_db.session.query(Project).filter(Project.project_id == project_id).first()
+        if project is None:
+            raise RuntimeError(f"No project with project_id {project_id}")
 
-            if data_dir is None:
-                data_dir = project.data_dir
+        if data_dir is None:
+            data_dir = project.data_dir
 
-            task_category = flask_db.session.query(TaskCategory).filter(
-                TaskCategory.task_category_id == project.task_category_id
-            ).first()
-            if task_category is None:
-                raise RuntimeError(f"Invalid task category id {project.task_category_id}")
+        task_category = flask_db.session.query(TaskCategory).filter(
+            TaskCategory.task_category_id == project.task_category_id
+        ).first()
+        if task_category is None:
+            raise RuntimeError(f"Invalid task category id {project.task_category_id}")
 
-            module_name = f"paddlelabel.task.{task_category.name}"
-            module = __import__(module_name, fromlist=["ProjectSubtypeSelector"])
-            selector = module.ProjectSubtypeSelector()
+        module_name = f"paddlelabel.task.{task_category.name}"
+        module = __import__(module_name, fromlist=["ProjectSubtypeSelector"])
+        selector = module.ProjectSubtypeSelector()
 
-            answers = all_options or {}
-            handler = selector.get_handler(answers, project)
-            importer = selector.get_importer(answers, project)
-            importer(data_dir)
+        answers = all_options or {}
+        handler = selector.get_handler(answers, project)
+        importer = selector.get_importer(answers, project)
+        importer(data_dir)
 
-            persists = selector.__persist__
-            if len(persists) != 0:
-                other_settings = {}
-                if project.other_settings:
-                    try:
-                        other_settings = json.loads(project.other_settings)
-                    except:
-                        other_settings = {}
-                for field in persists:
-                    if field in answers:
-                        other_settings[field] = answers[field]
-                project.other_settings = json.dumps(other_settings)
-            flask_db.session.commit()
+        persists = selector.__persist__
+        if len(persists) != 0:
+            other_settings = {}
+            if project.other_settings:
+                try:
+                    other_settings = json.loads(project.other_settings)
+                except:
+                    other_settings = {}
+            for field in persists:
+                if field in answers:
+                    other_settings[field] = answers[field]
+            project.other_settings = json.dumps(other_settings)
+        flask_db.session.commit()
 
 
 def run_export(project_id: int, export_dir: str, export_format: str | None = None, seg_mask_type: str | None = None):
@@ -66,9 +65,14 @@ def run_export(project_id: int, export_dir: str, export_format: str | None = Non
                 raise RuntimeError(f"Invalid task category id {project.task_category_id}")
 
             module_name = f"paddlelabel.task.{task_category.name}"
-            module = __import__(module_name, fromlist=["BaseTask"])
-            task_class_name = task_category.handler.split(".")[-1] if task_category.handler else task_category.name.title().replace("_", "")
-            handler = getattr(module, task_class_name)(project, is_export=True)
+            module = __import__(module_name, fromlist=["ProjectSubtypeSelector"])
+            selector = module.ProjectSubtypeSelector()
+            
+            # Use default_handler with is_export=True
+            if selector.default_handler is None:
+                raise RuntimeError(f"No default_handler for task category {task_category.name}")
+            
+            handler = selector.default_handler(project=project, is_export=True)
 
             if export_format is None or len(export_format) == 0:
                 exporter = getattr(handler, "default_exporter", None)

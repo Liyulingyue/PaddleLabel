@@ -1,16 +1,14 @@
-import { useState, useCallback, useEffect } from 'react';
-import { getDataImage } from '@/api/data';
-import { getImageSize } from '@/utils/file';
+import { useState, useEffect } from 'react';
 
-export function useImage(dataId: number | null, sault?: string) {
+export function useImage(src: string) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState('');
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!dataId) {
+    if (!src) {
       setImage(null);
       setImageUrl('');
       return;
@@ -18,23 +16,21 @@ export function useImage(dataId: number | null, sault?: string) {
 
     setLoading(true);
     setError(null);
-    const url = getDataImage(dataId, sault);
-    setImageUrl(url);
+    setImageUrl(src);
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = async () => {
+    img.onload = () => {
       setImage(img);
-      const s = await getImageSize(url);
-      setSize(s);
+      setSize({ width: img.naturalWidth, height: img.naturalHeight });
       setLoading(false);
     };
     img.onerror = () => {
       setError('Failed to load image');
       setLoading(false);
     };
-    img.src = url;
-  }, [dataId, sault]);
+    img.src = src;
+  }, [src]);
 
   return { image, imageUrl, size, loading, error };
 }

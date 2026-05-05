@@ -19,12 +19,14 @@ def list_tasks(
     tasks = db.query(Task).order_by(Task.modified.desc()).all()
     result = []
     for t in tasks:
+        ann_count = db.query(Annotation).filter(Annotation.task_id == t.task_id).count()
         result.append({
             "task_id": t.task_id,
             "project_id": t.project_id,
             "set": t.set,
             "data_paths": [d.path for d in t.datas],
             "annotations": [],
+            "annotation_count": ann_count,
             "created": t.created,
             "modified": t.modified,
         })

@@ -1,0 +1,145 @@
+.dir-browser-modal .ant-modal-body {
+  padding: 0 !important;
+}
+
+.dir-browser {
+  display: flex;
+  flex-direction: column;
+  height: 480px;
+  overflow: hidden;
+}
+
+.dir-browser__path-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.dir-browser__back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  color: #595959;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.dir-browser__back-btn:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.dir-browser__path-input {
+  flex: 1;
+}
+
+.dir-browser__path-input .ant-input-affix-wrapper {
+  border-radius: 6px;
+}
+
+.dir-browser__refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #8c8c8c;
+  transition: color 0.2s;
+}
+
+.dir-browser__refresh-btn:hover {
+  color: #1890ff;
+}
+
+.dir-browser__list-wrap {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  padding: 8px 0;
+  height: 100%;
+}
+
+.dir-browser__list {
+  border: none;
+  height: 100%;
+}
+
+.dir-browser__list .ant-spin-nested-loading,
+.dir-browser__list .ant-spin-container {
+  height: 100%;
+}
+
+.dir-browser__list .ant-list-items {
+  height: auto;
+}
+
+.dir-browser__list .ant-list-item {
+  padding: 10px 20px;
+  border-bottom: 1px solid #f5f5f5;
+  margin: 0;
+}
+
+.dir-browser__list .ant-list-item:last-child {
+  border-bottom: none;
+}
+
+.dir-browser__item {
+  cursor: default;
+  transition: background 0.15s;
+}
+
+.dir-browser__item--folder {
+  cursor: pointer;
+}
+
+.dir-browser__item--folder:hover {
+  background: #f0f7ff;
+}
+
+.dir-browser__item-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.dir-browser__icon {
+  font-size: 16px;
+  color: #8c8c8c;
+  flex-shrink: 0;
+}
+
+.dir-browser__icon--folder {
+  font-size: 18px;
+  color: #fa8c16;
+}
+
+.dir-browser__name {
+  font-size: 14px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dir-browser__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #bfbfbf;
+  font-size: 14px;
+}

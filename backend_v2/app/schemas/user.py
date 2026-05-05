@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict
 
 
-class UserBase(BaseModel):
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UserBase(BaseSchema):
     username: str | None = None
     email: str | None = None
     role_id: int | None = None

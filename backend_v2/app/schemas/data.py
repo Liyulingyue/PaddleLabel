@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class DataBase(BaseModel):
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DataBase(BaseSchema):
     task_id: int | None = None
     path: str | None = None
     size: str | None = None

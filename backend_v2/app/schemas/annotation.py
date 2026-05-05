@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class LabelSchema(BaseModel):
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LabelSchema(BaseSchema):
     label_id: int | None = None
     project_id: int | None = None
     id: int | None = None

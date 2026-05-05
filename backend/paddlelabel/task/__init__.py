@@ -14,5 +14,9 @@ files = Path(__file__).parent.glob("*.py")
 __all__ = list(map(lambda p: p.name.split(".")[0], files))
 
 # TODO(Liyulingyue): 引入成员，后续需要跟__all__合并
+from .classification import SingleClass as Classification
 from .detection import Detection
 from .semantic_segmentation import SemanticSegmentation
+from .instance_segmentation import InstanceSegmentation
+from .optical_character_recognition import OpticalCharacterRecognition
+from .point import Point

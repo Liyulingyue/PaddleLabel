@@ -1,0 +1,105 @@
+.welcome-page {
+  padding: 32px 40px;
+  background: #f0f2f5;
+  min-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.welcome-card {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.welcome-card__header {
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.welcome-card__title {
+  margin: 0 0 4px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.welcome-card__subtitle {
+  margin: 0;
+  font-size: 0.813rem;
+  color: #8c8c8c;
+}
+
+.welcome-card__body {
+  padding: 24px 24px 28px;
+}
+
+.welcome-type-card {
+  border-radius: 12px;
+  border: 1.5px solid #f0f0f0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: #fff;
+}
+
+.welcome-type-card:hover {
+  border-color: #1890ff;
+  box-shadow: 0 4px 20px rgba(24, 144, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.welcome-type-card__img-wrap {
+  position: relative;
+  height: 120px;
+  overflow: hidden;
+}
+
+.welcome-type-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+.welcome-type-card:hover .welcome-type-card__img {
+  transform: scale(1.05);
+}
+
+.welcome-type-card__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.welcome-type-card:hover .welcome-type-card__overlay {
+  opacity: 1;
+}
+
+.welcome-type-card__icon {
+  font-size: 28px;
+  color: #fff;
+}
+
+.welcome-type-card__name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+}
+
+.welcome-type-card__desc {
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: #8c8c8c;
+  text-align: center;
+  line-height: 1.4;
+}

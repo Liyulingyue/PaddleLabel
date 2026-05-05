@@ -163,6 +163,42 @@ def create_project(
     return _project_to_read(project, db)
 
 
+
+@router.get("/browse_directory")
+def browse_directory(path: str = Query(default="", description="Directory path to browse")):
+    """Browse server directories for dataset path selection."""
+    import os
+    
+    if not path:
+        path = str(Path.home())
+    
+    try:
+        p = Path(path).resolve()
+        if not p.exists():
+            raise HTTPException(status_code=404, detail="Path not found")
+        if not p.is_dir():
+            raise HTTPException(status_code=400, detail="Path is not a directory")
+        
+        items = []
+        for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if item.name.startswith('.'):
+                continue
+            items.append({
+                "name": item.name,
+                "path": str(item),
+                "isDir": item.is_dir(),
+            })
+        
+        return {
+            "currentPath": str(p),
+            "parentPath": str(p.parent) if p.parent != p else None,
+            "items": items,
+        }
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.project_id == project_id).first()
@@ -220,12 +256,14 @@ def list_tasks(
     result = []
     for t in tasks:
         data_paths = [d.path for d in t.datas]
+        ann_count = db.query(Annotation).filter(Annotation.task_id == t.task_id).count()
         result.append({
             "task_id": t.task_id,
             "project_id": t.project_id,
             "set": t.set,
             "data_paths": data_paths,
             "annotations": [],
+            "annotation_count": ann_count,
             "created": t.created,
             "modified": t.modified,
         })
@@ -474,3 +512,5 @@ def _annotation_to_dict(a: Annotation, db: Session) -> dict:
             "modified": label.modified,
         } if label else None,
     }
+
+

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class TaskBase(BaseModel):
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TaskBase(BaseSchema):
     project_id: int | None = None
     set: int | None = None
 
@@ -52,6 +55,7 @@ class TaskRead(TaskBase):
     task_id: int | None = None
     data_paths: list[str] = []
     annotations: list[AnnotationSchema] = []
+    annotation_count: int = 0
     created: datetime | None = None
     modified: datetime | None = None
 

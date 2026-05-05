@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
+import os
 import sys
 from pathlib import Path
-from contextlib import contextmanager
 
+# Ensure original paddlelabel backend is importable
 backend_path = Path("/home/liyulingyue/Codes/PaddleLabel/backend")
 if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
+
+# Ensure this package (backend_v2) root is importable
+pkg_root = Path(__file__).parent.parent
+if str(pkg_root) not in sys.path:
+    sys.path.insert(0, str(pkg_root))
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -42,4 +48,4 @@ def get_db():
         db.close()
 
 
-SessionLocal = _session_factory  # for direct use
+SessionLocal = _session_factory
