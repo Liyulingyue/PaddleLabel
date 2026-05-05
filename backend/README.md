@@ -1,12 +1,13 @@
-# PaddleLabel v2 Backend
+# PaddleLabel Backend
 
 FastAPI-based backend for PaddleLabel.
 
 ## Quick Start
 
 ```bash
-# Create virtual environment (if not exists)
-cd /home/liyulingyue/Codes/PaddleLabel/backend_v2
+cd /home/liyulingyue/Codes/PaddleLabel/backend
+
+# Create virtual environment (first time)
 python3 -m venv .venv
 source .venv/bin/activate
 
@@ -30,17 +31,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 18000 --reload
 ## Project Structure
 
 ```
-backend_v2/
+backend/
 ├── app/                # FastAPI application
 │   ├── routers/        # API endpoints
 │   ├── schemas/        # Pydantic models
 │   ├── task/           # Import/Export tasks
 │   └── main.py         # App entry point
-├── paddlelabel/        # Core labeling logic (from v1)
+├── paddlelabel/        # Core labeling logic
 └── requirements.txt
 ```
-
-## Notes
-
-- This is a standalone v2 backend, fully independent from v1
-- Legacy v1 code is in `/legacy` folder at project root
