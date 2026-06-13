@@ -1,32 +1,26 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from app.schemas.base import CamelModel, TimestampedModel
+from app.schemas.annotation import AnnotationRead
 
 
-class BaseSchema(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class DataBase(BaseSchema):
-    task_id: int | None = None
+class DataBase(CamelModel):
     path: str | None = None
     size: str | None = None
-    predicted: bool | None = None
+    predicted: bool | None = False
+    sault: str | None = None
 
 
 class DataCreate(DataBase):
-    task_id: int
+    path: str
+    task_id: int | None = None
 
 
 class DataUpdate(DataBase):
-    pass
+    predicted: bool | None = None
 
 
-class DataRead(DataBase):
+class DataRead(DataBase, TimestampedModel):
     data_id: int | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
-    sault: str | None = None
-
-    class Config:
-        from_attributes = True
+    task_id: int | None = None
+    annotations: list[AnnotationRead] = []

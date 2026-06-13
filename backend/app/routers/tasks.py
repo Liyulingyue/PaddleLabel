@@ -1,220 +1,132 @@
-# -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
-from sqlalchemy.orm import Session
+"""Task and Data endpoints (matching legacy api/controller/task.py & data.py)."""
 
-from app.database import get_db, Task, Data, Tag, TagTask, Annotation, Label
-from app.schemas.task import TaskCreate, TaskUpdate, TaskRead
-from app.schemas.tag import TagRead
-from app.schemas.annotation import AnnotationRead
-from app.schemas.data import DataRead
+from __future__ import annotations
 
-router = APIRouter(prefix="/tasks", tags=["Task"])
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
+from app.database import DbSession
+from app.models.data import Data
+from app.models.task import Task
+from app.services.serializers import annotation_to_dict, data_to_dict, task_to_dict
 
-@router.get("", response_model=list[TaskRead])
-def list_tasks(
-    order_by: str = Query("modified desc"),
-    db: Session = Depends(get_db),
-):
-    tasks = db.query(Task).order_by(Task.modified.desc()).all()
-    result = []
-    for t in tasks:
-        ann_count = db.query(Annotation).filter(Annotation.task_id == t.task_id).count()
-        result.append({
-            "task_id": t.task_id,
-            "project_id": t.project_id,
-            "set": t.set,
-            "data_paths": [d.path for d in t.datas],
-            "annotations": [],
-            "annotation_count": ann_count,
-            "created": t.created,
-            "modified": t.modified,
-        })
-    return result
+router = APIRouter(tags=["Task / Data"])
 
 
-@router.post("", response_model=TaskRead, status_code=201)
-def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
-    task = Task(project_id=task_in.project_id, set=task_in.set or 0)
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return {
-        "task_id": task.task_id,
-        "project_id": task.project_id,
-        "set": task.set,
-        "data_paths": [],
-        "annotations": [],
-        "created": task.created,
-        "modified": task.modified,
-    }
-
-
-@router.get("/{task_id}")
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
+@router.get("/tasks/{task_id}")
+async def get_task(task_id: int, db: DbSession):
+    stmt = select(Task).where(Task.task_id == task_id).options(selectinload(Task.datas))
+    res = await db.execute(stmt)
+    t = res.scalar_one_or_none()
+    if t is None:
         raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    annotations = db.query(Annotation).filter(Annotation.task_id == task_id).all()
-    ann_list = []
-    for a in annotations:
-        label = db.query(Label).filter(Label.label_id == a.label_id).first()
-        ann_list.append({
-            "annotation_id": a.annotation_id,
-            "frontend_id": a.frontend_id,
-            "result": a.result,
-            "type": a.type,
-            "label_id": a.label_id,
-            "data_id": a.data_id,
-            "task_id": a.task_id,
-            "project_id": a.project_id,
-            "predicted_by": a.predicted_by,
-            "created": a.created,
-            "modified": a.modified,
-            "label": {
-                "label_id": label.label_id,
-                "project_id": label.project_id,
-                "id": label.id,
-                "name": label.name,
-                "color": label.color,
-                "comment": label.comment,
-                "super_category_id": label.super_category_id,
-                "created": label.created,
-                "modified": label.modified,
-            } if label else None,
-        })
-    return {
-        "task_id": task.task_id,
-        "project_id": task.project_id,
-        "set": task.set,
-        "data_paths": [d.path for d in task.datas],
-        "annotations": ann_list,
-        "created": task.created,
-        "modified": task.modified,
-    }
+    return task_to_dict(t)
 
 
-@router.put("/{task_id}", response_model=TaskRead)
-def update_task(task_id: int, task_in: TaskUpdate, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
+@router.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, db: DbSession):
+    t = await db.get(Task, task_id)
+    if t is None:
         raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    for k, v in task_in.model_dump(exclude_unset=True).items():
-        setattr(task, k, v)
-    db.commit()
-    db.refresh(task)
-    return {
-        "task_id": task.task_id,
-        "project_id": task.project_id,
-        "set": task.set,
-        "data_paths": [d.path for d in task.datas],
-        "annotations": [],
-        "created": task.created,
-        "modified": task.modified,
-    }
-
-
-@router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    db.delete(task)
-    db.commit()
+    await db.delete(t)
+    await db.commit()
     return {"message": f"Task {task_id} deleted"}
 
 
-@router.get("/{task_id}/tags")
-def list_task_tags(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    tag_tasks = db.query(TagTask).filter(TagTask.task_id == task_id).all()
-    result = []
-    for tt in tag_tasks:
-        tag = db.query(Tag).filter(Tag.tag_id == tt.tag_id).first()
-        if tag:
-            result.append({
-                "tag_id": tag.tag_id,
-                "project_id": tag.project_id,
-                "name": tag.name,
-                "color": tag.color,
-                "comment": tag.comment,
-                "created": tag.created,
-                "modified": tag.modified,
-            })
-    return result
+@router.get("/tasks/{task_id}/datas", response_model=list[dict])
+async def list_datas(task_id: int, db: DbSession):
+    res = await db.execute(
+        select(Data).where(Data.task_id == task_id).options(selectinload(Data.annotations))
+    )
+    out = []
+    for d in res.scalars().all():
+        dd = data_to_dict(d)
+        dd["annotations"] = [annotation_to_dict(a) for a in d.annotations]
+        out.append(dd)
+    return out
 
 
-@router.post("/{task_id}/tags")
-def add_tag_to_task(task_id: int, body: dict, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    tag_id = body.get("tag_id")
-    if tag_id is None:
-        raise HTTPException(status_code=500, detail="tag_id is required")
-
-    existing = db.query(TagTask).filter(TagTask.task_id == task_id, TagTask.tag_id == tag_id).first()
-    if existing:
-        return {"message": "Tag already exists"}
-
-    tag_task = TagTask(project_id=task.project_id, task_id=task_id, tag_id=tag_id)
-    db.add(tag_task)
-    db.commit()
-    return {"message": "Tag added"}
+@router.get("/datas/{data_id}", response_model=dict)
+async def get_data(data_id: int, db: DbSession):
+    stmt = select(Data).where(Data.data_id == data_id).options(selectinload(Data.annotations))
+    res = await db.execute(stmt)
+    d = res.scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status_code=404, detail=f"No data with data_id {data_id}")
+    dd = data_to_dict(d)
+    dd["annotations"] = [annotation_to_dict(a) for a in d.annotations]
+    return dd
 
 
-@router.get("/{task_id}/datas")
-def list_task_datas(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.task_id == task_id).first()
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"No task with task_id {task_id}")
-    from app.routers.datas import _get_sault
-    return [
-        {
-            "data_id": d.data_id,
-            "task_id": d.task_id,
-            "path": d.path,
-            "size": d.size,
-            "predicted": d.predicted,
-            "created": d.created,
-            "modified": d.modified,
-            "sault": _get_sault(d),
-        }
-        for d in task.datas
-    ]
+@router.put("/datas/{data_id}")
+async def update_data(data_id: int, body: dict, db: DbSession):
+    d = await db.get(Data, data_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail=f"No data with data_id {data_id}")
+    for k, v in body.items():
+        if k in ("data_id", "created", "task_id"):
+            continue
+        setattr(d, k, v)
+    await db.commit()
+    await db.refresh(d)
+    return data_to_dict(d)
 
 
-@router.get("/{task_id}/annotations")
-def list_task_annotations(task_id: int, db: Session = Depends(get_db)):
-    db.query(Task).filter(Task.task_id == task_id).first()
-    annotations = db.query(Annotation).filter(Annotation.task_id == task_id).all()
-    result = []
-    for a in annotations:
-        label = db.query(Label).filter(Label.label_id == a.label_id).first()
-        result.append({
-            "annotation_id": a.annotation_id,
-            "frontend_id": a.frontend_id,
-            "result": a.result,
-            "type": a.type,
-            "label_id": a.label_id,
-            "data_id": a.data_id,
-            "task_id": a.task_id,
-            "project_id": a.project_id,
-            "predicted_by": a.predicted_by,
-            "created": a.created,
-            "modified": a.modified,
-            "label": {
-                "label_id": label.label_id,
-                "project_id": label.project_id,
-                "id": label.id,
-                "name": label.name,
-                "color": label.color,
-                "comment": label.comment,
-                "super_category_id": label.super_category_id,
-                "created": label.created,
-                "modified": label.modified,
-            } if label else None,
-        })
-    return result
+@router.get("/datas/{data_id}/annotations", response_model=list[dict])
+async def list_data_annotations(data_id: int, db: DbSession):
+    res = await db.execute(select(Data).where(Data.data_id == data_id).options(selectinload(Data.annotations)))
+    d = res.scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status_code=404, detail=f"No data with data_id {data_id}")
+    return [annotation_to_dict(a) for a in d.annotations]
+
+
+@router.post("/datas/{data_id}/annotations")
+async def set_data_annotations(data_id: int, annotations: list[dict], db: DbSession):
+    """Bulk replace annotations of a given data row."""
+    from app.models.annotation import Annotation
+    from app.models.label import Label
+    from sqlalchemy import delete
+
+    d = await db.get(Data, data_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail=f"No data with data_id {data_id}")
+
+    await db.execute(delete(Annotation).where(Annotation.data_id == data_id))
+    await db.flush()
+
+    for ann in annotations:
+        label_id = ann.get("label_id")
+        if label_id is None and ann.get("label_name"):
+            # auto create label by name (look up in same project)
+            res = await db.execute(
+                select(Label).where(Label.name == ann["label_name"])
+            )
+            lab = res.scalar_one_or_none()
+            if lab is None:
+                lab = Label(
+                    project_id=d.task.project_id if d.task else None,
+                    name=ann["label_name"],
+                    color="#" + "0" * 6,
+                )
+                db.add(lab)
+                await db.flush()
+            label_id = lab.label_id
+        db.add(
+            Annotation(
+                frontend_id=ann.get("frontend_id"),
+                result=ann.get("result", ""),
+                type=ann.get("type"),
+                label_id=label_id,
+                data_id=data_id,
+                task_id=d.task_id,
+                project_id=d.task.project_id if d.task else None,
+            )
+        )
+    await db.commit()
+    res = await db.execute(
+        select(Data).where(Data.data_id == data_id).options(selectinload(Data.annotations))
+    )
+    d = res.scalar_one()
+    return [annotation_to_dict(a) for a in d.annotations]

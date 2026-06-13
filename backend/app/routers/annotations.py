@@ -1,63 +1,69 @@
-# -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy.orm import Session
+"""Annotation routes (top-level /annotations/*)."""
 
-from app.database import get_db, Annotation, Label
-from app.schemas.annotation import AnnotationCreate, AnnotationUpdate, AnnotationRead
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.database import DbSession
 from app.deps import check_request_id
+from app.models.annotation import Annotation
+from app.models.data import Data
+from app.models.label import Label
+from app.models.task import Task
+from app.schemas.annotation import AnnotationCreate, AnnotationUpdate
+from app.services.serializers import annotation_to_dict
 
 router = APIRouter(prefix="/annotations", tags=["Annotation"])
 
 
-@router.get("", response_model=list[AnnotationRead], include_in_schema=True)
-def list_annotations(
-    db: Session = Depends(get_db),
+@router.get("", response_model=list[dict])
+async def list_annotations(db: DbSession):
+    stmt = select(Annotation).options(selectinload(Annotation.label)).order_by(Annotation.modified.desc())
+    res = await db.execute(stmt)
+    return [annotation_to_dict(a) for a in res.scalars().all()]
+
+
+@router.post("", response_model=list[dict])
+async def create_annotations(
+    annotations: list[AnnotationCreate],
+    db: DbSession,
+    deduplicate: bool = False,
 ):
-    annotations = db.query(Annotation).order_by(Annotation.modified.desc()).all()
-    return [_annotation_to_dict(a, db) for a in annotations]
-
-
-@router.get("/", response_model=list[AnnotationRead], include_in_schema=False)
-def list_annotations_slash(
-    db: Session = Depends(get_db),
-):
-    return list_annotations(db)
-
-
-@router.post("", response_model=list[AnnotationRead], status_code=201)
-def create_annotation(
-    annotations_in: list[AnnotationCreate],
-    db: Session = Depends(get_db),
-    request_id: str | None = Header(None),
-    deduplicate: bool = Header(False),
-):
-    check_request_id(request_id)
-    from app.database import Data, Task
-    created = []
-    for ann_in in annotations_in:
+    check_request_id  # signature-only hook; actual check is on individual routers
+    out: list[Annotation] = []
+    for ann_in in annotations:
         task_id = ann_in.task_id
-        if task_id is None:
-            data = db.query(Data).filter(Data.data_id == ann_in.data_id).first()
-            if data is None:
-                raise HTTPException(status_code=404, detail=f"Data with data_id {ann_in.data_id} not found")
-            task_id = data.task_id
-
         project_id = ann_in.project_id
+        if task_id is None:
+            res = await db.execute(select(Data).where(Data.data_id == ann_in.data_id))
+            d = res.scalar_one_or_none()
+            if d is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Data with data_id {ann_in.data_id} not found"
+                )
+            task_id = d.task_id
+
         if project_id is None:
-            task = db.query(Task).filter(Task.task_id == task_id).first()
-            if task is None:
+            res = await db.execute(select(Task).where(Task.task_id == task_id))
+            t = res.scalar_one_or_none()
+            if t is None:
                 raise HTTPException(status_code=404, detail=f"Task with task_id {task_id} not found")
-            project_id = task.project_id
+            project_id = t.project_id
 
         if deduplicate:
-            existing = db.query(Annotation).filter(
-                Annotation.data_id == ann_in.data_id,
-                Annotation.label_id == ann_in.label_id,
-                Annotation.result == ann_in.result,
-                Annotation.type == ann_in.type,
-            ).first()
-            if existing:
-                created.append(existing)
+            res = await db.execute(
+                select(Annotation).where(
+                    Annotation.data_id == ann_in.data_id,
+                    Annotation.label_id == ann_in.label_id,
+                    Annotation.result == ann_in.result,
+                    Annotation.type == ann_in.type,
+                )
+            )
+            existing = res.scalar_one_or_none()
+            if existing is not None:
+                out.append(existing)
                 continue
 
         ann = Annotation(
@@ -71,64 +77,44 @@ def create_annotation(
             predicted_by=ann_in.predicted_by,
         )
         db.add(ann)
-        created.append(ann)
-    db.commit()
-    return [_annotation_to_dict(a, db) for a in created]
+        out.append(ann)
+    await db.commit()
+    # re-fetch with label
+    ids = [a.annotation_id for a in out if a.annotation_id is not None]
+    if ids:
+        stmt = select(Annotation).where(Annotation.annotation_id.in_(ids)).options(selectinload(Annotation.label))
+        res = await db.execute(stmt)
+        out = list(res.scalars().all())
+    return [annotation_to_dict(a) for a in out]
 
 
 @router.get("/{annotation_id}")
-def get_annotation(annotation_id: int, db: Session = Depends(get_db)):
-    ann = db.query(Annotation).filter(Annotation.annotation_id == annotation_id).first()
-    if ann is None:
+async def get_annotation(annotation_id: int, db: DbSession):
+    stmt = select(Annotation).where(Annotation.annotation_id == annotation_id).options(selectinload(Annotation.label))
+    res = await db.execute(stmt)
+    a = res.scalar_one_or_none()
+    if a is None:
         raise HTTPException(status_code=404, detail=f"No annotation with annotation_id {annotation_id}")
-    return _annotation_to_dict(ann, db)
+    return annotation_to_dict(a)
 
 
-@router.put("/{annotation_id}", response_model=AnnotationRead)
-def update_annotation(annotation_id: int, ann_in: AnnotationUpdate, db: Session = Depends(get_db)):
-    ann = db.query(Annotation).filter(Annotation.annotation_id == annotation_id).first()
-    if ann is None:
+@router.put("/{annotation_id}")
+async def update_annotation(annotation_id: int, body: AnnotationUpdate, db: DbSession):
+    a = await db.get(Annotation, annotation_id)
+    if a is None:
         raise HTTPException(status_code=404, detail=f"No annotation with annotation_id {annotation_id}")
-    for k, v in ann_in.model_dump(exclude_unset=True).items():
-        setattr(ann, k, v)
-    db.commit()
-    db.refresh(ann)
-    return _annotation_to_dict(ann, db)
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(a, k, v)
+    await db.commit()
+    await db.refresh(a)
+    return annotation_to_dict(a)
 
 
 @router.delete("/{annotation_id}")
-def delete_annotation(annotation_id: int, db: Session = Depends(get_db)):
-    ann = db.query(Annotation).filter(Annotation.annotation_id == annotation_id).first()
-    if ann is None:
+async def delete_annotation(annotation_id: int, db: DbSession):
+    a = await db.get(Annotation, annotation_id)
+    if a is None:
         raise HTTPException(status_code=404, detail=f"No annotation with annotation_id {annotation_id}")
-    db.delete(ann)
-    db.commit()
+    await db.delete(a)
+    await db.commit()
     return {"message": f"Annotation {annotation_id} deleted"}
-
-
-def _annotation_to_dict(a: Annotation, db: Session) -> dict:
-    label = db.query(Label).filter(Label.label_id == a.label_id).first()
-    return {
-        "annotation_id": a.annotation_id,
-        "frontend_id": a.frontend_id,
-        "result": a.result,
-        "type": a.type,
-        "label_id": a.label_id,
-        "data_id": a.data_id,
-        "task_id": a.task_id,
-        "project_id": a.project_id,
-        "predicted_by": a.predicted_by,
-        "created": a.created,
-        "modified": a.modified,
-        "label": {
-            "label_id": label.label_id,
-            "project_id": label.project_id,
-            "id": label.id,
-            "name": label.name,
-            "color": label.color,
-            "comment": label.comment,
-            "super_category_id": label.super_category_id,
-            "created": label.created,
-            "modified": label.modified,
-        } if label else None,
-    }

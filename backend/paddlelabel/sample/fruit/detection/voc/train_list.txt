@@ -1,2 +1,0 @@
-JPEGImages/2.jpeg Annotations/2.xml
-JPEGImages/4.jpeg Annotations/4.xml

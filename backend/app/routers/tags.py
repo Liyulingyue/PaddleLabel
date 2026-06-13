@@ -1,67 +1,16 @@
-# -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy.orm import Session
+"""Tag routes."""
 
-from app.database import get_db, Tag
-from app.schemas.tag import TagCreate, TagUpdate, TagRead
-from app.deps import check_request_id
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
+
+from app.database import DbSession
+from app.models.tag import Tag
+from app.schemas.tag import TagCreate, TagUpdate
+from app.util.color import rand_hex_color
 
 router = APIRouter(prefix="/tags", tags=["Tag"])
-
-
-@router.get("", response_model=list[TagRead])
-def list_tags(db: Session = Depends(get_db)):
-    tags = db.query(Tag).order_by(Tag.modified.desc()).all()
-    return [_tag_to_dict(t) for t in tags]
-
-
-@router.post("", response_model=TagRead, status_code=201)
-def create_tag(
-    tag_in: TagCreate,
-    db: Session = Depends(get_db),
-    request_id: str | None = Header(None),
-):
-    check_request_id(request_id)
-    tag = Tag(
-        project_id=tag_in.project_id,
-        name=tag_in.name,
-        color=tag_in.color,
-        comment=tag_in.comment,
-    )
-    db.add(tag)
-    db.commit()
-    db.refresh(tag)
-    return _tag_to_dict(tag)
-
-
-@router.get("/{tag_id}")
-def get_tag(tag_id: int, db: Session = Depends(get_db)):
-    tag = db.query(Tag).filter(Tag.tag_id == tag_id).first()
-    if tag is None:
-        raise HTTPException(status_code=404, detail=f"No tag with tag_id {tag_id}")
-    return _tag_to_dict(tag)
-
-
-@router.put("/{tag_id}", response_model=TagRead)
-def update_tag(tag_id: int, tag_in: TagUpdate, db: Session = Depends(get_db)):
-    tag = db.query(Tag).filter(Tag.tag_id == tag_id).first()
-    if tag is None:
-        raise HTTPException(status_code=404, detail=f"No tag with tag_id {tag_id}")
-    for k, v in tag_in.model_dump(exclude_unset=True).items():
-        setattr(tag, k, v)
-    db.commit()
-    db.refresh(tag)
-    return _tag_to_dict(tag)
-
-
-@router.delete("/{tag_id}")
-def delete_tag(tag_id: int, db: Session = Depends(get_db)):
-    tag = db.query(Tag).filter(Tag.tag_id == tag_id).first()
-    if tag is None:
-        raise HTTPException(status_code=404, detail=f"No tag with tag_id {tag_id}")
-    db.delete(tag)
-    db.commit()
-    return {"message": f"Tag {tag_id} deleted"}
 
 
 def _tag_to_dict(t: Tag) -> dict:
@@ -71,6 +20,49 @@ def _tag_to_dict(t: Tag) -> dict:
         "name": t.name,
         "color": t.color,
         "comment": t.comment,
-        "created": t.created,
-        "modified": t.modified,
     }
+
+
+@router.get("")
+async def list_tags(db: DbSession):
+    res = await db.execute(select(Tag).order_by(Tag.project_id))
+    return [_tag_to_dict(t) for t in res.scalars().all()]
+
+
+@router.post("", status_code=201)
+async def create_tag(body: TagCreate, db: DbSession, projectId: int | None = None):
+    project_id = projectId
+    if project_id is None:
+        raise HTTPException(status_code=400, detail="projectId query parameter is required")
+    tag = Tag(
+        project_id=project_id,
+        name=body.name,
+        color=body.color or rand_hex_color(),
+        comment=body.comment,
+    )
+    db.add(tag)
+    await db.commit()
+    await db.refresh(tag)
+    return _tag_to_dict(tag)
+
+
+@router.put("/{tag_id}")
+async def update_tag(tag_id: int, body: TagUpdate, db: DbSession):
+    t = await db.get(Tag, tag_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail=f"No tag with tag_id {tag_id}")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(t, k, v)
+    await db.commit()
+    await db.refresh(t)
+    return _tag_to_dict(t)
+
+
+@router.delete("/{tag_id}")
+async def delete_tag(tag_id: int, db: DbSession):
+    t = await db.get(Tag, tag_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail=f"No tag with tag_id {tag_id}")
+    await db.delete(t)
+    await db.commit()
+    return {"message": f"Tag {tag_id} deleted"}

@@ -1,32 +1,22 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from app.schemas.base import CamelModel, TimestampedModel
 
 
-class BaseTagSchema(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TagBase(BaseTagSchema):
-    project_id: int | None = None
-    name: str | None = None
+class TagBase(CamelModel):
+    name: str
     color: str | None = None
     comment: str | None = None
 
 
 class TagCreate(TagBase):
-    name: str
-    project_id: int
-
-
-class TagUpdate(TagBase):
     pass
 
 
-class TagRead(TagBase):
-    tag_id: int | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
+class TagUpdate(TagBase):
+    name: str | None = None
 
-    class Config:
-        from_attributes = True
+
+class TagRead(TagBase, TimestampedModel):
+    tag_id: int | None = None
+    project_id: int | None = None

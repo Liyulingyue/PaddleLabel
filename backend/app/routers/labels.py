@@ -1,92 +1,78 @@
-# -*- coding: utf-8 -*-
-from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy.orm import Session
+"""Label routes (top-level /labels/*)."""
 
-from app.database import get_db, Label
-from app.schemas.label import LabelCreate, LabelUpdate, LabelRead
-from app.deps import check_request_id
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.database import DbSession
+from app.models.label import Label
+from app.schemas.label import LabelCreate, LabelUpdate
+from app.services.serializers import label_to_dict
+from app.util.color import rand_hex_color
 
 router = APIRouter(prefix="/labels", tags=["Label"])
 
 
-@router.get("", response_model=list[LabelRead])
-def list_labels(db: Session = Depends(get_db)):
-    labels = db.query(Label).order_by(Label.modified.desc()).all()
-    return [_label_to_dict(l) for l in labels]
+@router.get("", response_model=list[dict])
+async def list_labels(db: DbSession):
+    stmt = select(Label).order_by(Label.project_id, Label.id)
+    res = await db.execute(stmt)
+    return [label_to_dict(l) for l in res.scalars().all()]
 
 
-@router.post("", response_model=list[LabelRead], status_code=201)
-def create_label(
-    labels_in: list[LabelCreate],
-    db: Session = Depends(get_db),
-    request_id: str | None = Header(None),
-    remove_duplicate_by_name: str | None = Header(None),
+@router.post("", response_model=list[dict])
+async def create_labels(
+    labels: list[LabelCreate],
+    db: DbSession,
+    deduplicate: bool = False,
 ):
-    check_request_id(request_id)
-    created = []
-    for label_in in labels_in:
-        if remove_duplicate_by_name:
-            existing = db.query(Label).filter(Label.name == label_in.name).first()
-            if existing:
-                created.append(existing)
+    out: list[Label] = []
+    for l in labels:
+        project_id = l.project_id
+        if deduplicate and project_id is not None:
+            stmt = select(Label).where(Label.project_id == project_id, Label.name == l.name)
+            res = await db.execute(stmt)
+            existing = res.scalar_one_or_none()
+            if existing is not None:
+                out.append(existing)
                 continue
-
-        label_id_val = label_in.id if label_in.id is not None else 0
         label = Label(
-            project_id=label_in.project_id,
-            id=label_id_val,
-            name=label_in.name,
-            color=label_in.color,
-            comment=label_in.comment,
-            super_category_id=label_in.super_category_id,
+            project_id=project_id,
+            id=l.id or 0,
+            name=l.name,
+            color=l.color or rand_hex_color(),
+            comment=l.comment,
+            super_category_id=l.super_category_id,
+            type=l.type,
+            active=l.active if l.active is not None else True,
         )
         db.add(label)
-        created.append(label)
-    db.commit()
-    for l in created:
-        db.refresh(l)
-    return [_label_to_dict(l) for l in created]
+        out.append(label)
+    await db.commit()
+    for l in out:
+        await db.refresh(l)
+    return [label_to_dict(l) for l in out]
 
 
-@router.get("/{label_id}")
-def get_label(label_id: int, db: Session = Depends(get_db)):
-    label = db.query(Label).filter(Label.label_id == label_id).first()
-    if label is None:
+@router.put("/{label_id}")
+async def update_label(label_id: int, body: LabelUpdate, db: DbSession):
+    l = await db.get(Label, label_id)
+    if l is None:
         raise HTTPException(status_code=404, detail=f"No label with label_id {label_id}")
-    return _label_to_dict(label)
-
-
-@router.put("/{label_id}", response_model=LabelRead)
-def update_label(label_id: int, label_in: LabelUpdate, db: Session = Depends(get_db)):
-    label = db.query(Label).filter(Label.label_id == label_id).first()
-    if label is None:
-        raise HTTPException(status_code=404, detail=f"No label with label_id {label_id}")
-    for k, v in label_in.model_dump(exclude_unset=True).items():
-        setattr(label, k, v)
-    db.commit()
-    db.refresh(label)
-    return _label_to_dict(label)
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(l, k, v)
+    await db.commit()
+    await db.refresh(l)
+    return label_to_dict(l)
 
 
 @router.delete("/{label_id}")
-def delete_label(label_id: int, db: Session = Depends(get_db)):
-    label = db.query(Label).filter(Label.label_id == label_id).first()
-    if label is None:
+async def delete_label(label_id: int, db: DbSession):
+    l = await db.get(Label, label_id)
+    if l is None:
         raise HTTPException(status_code=404, detail=f"No label with label_id {label_id}")
-    db.delete(label)
-    db.commit()
+    await db.delete(l)
+    await db.commit()
     return {"message": f"Label {label_id} deleted"}
-
-
-def _label_to_dict(l: Label) -> dict:
-    return {
-        "label_id": l.label_id,
-        "project_id": l.project_id,
-        "id": l.id,
-        "name": l.name,
-        "color": l.color,
-        "comment": l.comment,
-        "super_category_id": l.super_category_id,
-        "created": l.created,
-        "modified": l.modified,
-    }

@@ -1,51 +1,67 @@
-# -*- coding: utf-8 -*-
-import os
-import sys
-from pathlib import Path
+"""Async SQLAlchemy 2.0 engine, session factory and Base."""
 
-# Ensure original paddlelabel backend is importable
-backend_path = Path("/home/liyulingyue/Codes/PaddleLabel/backend")
-if str(backend_path) not in sys.path:
-    sys.path.insert(0, str(backend_path))
+from __future__ import annotations
 
-# Ensure this package (backend_v2) root is importable
-pkg_root = Path(__file__).parent.parent
-if str(pkg_root) not in sys.path:
-    sys.path.insert(0, str(pkg_root))
+from collections.abc import AsyncGenerator
+from typing import Annotated
 
-import logging
-logging.basicConfig(level=logging.INFO)
+from fastapi import Depends
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase
 
-import paddlelabel
-from paddlelabel import configs
-from paddlelabel.api.model import Project, Label, Task, Data, Annotation, User, TaskCategory, Tag, TagTask
+from app.config import get_settings
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
 
-_engine = create_engine(
-    configs.db_url,
-    connect_args={"check_same_thread": False},
+class Base(DeclarativeBase):
+    pass
+
+
+_settings = get_settings()
+engine = create_async_engine(
+    _settings.db_url,
     echo=False,
+    future=True,
+    connect_args={"check_same_thread": False},
 )
 
 
-@event.listens_for(_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, _):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
-_session_factory = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
+SessionLocal = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
+    autoflush=False,
+    class_=AsyncSession,
+)
 
 
-def get_db():
-    db = _session_factory()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with SessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
-SessionLocal = _session_factory
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def init_db() -> None:
+    """Create tables for all models registered on Base."""
+    from app import models  # noqa: F401  - import for side effects
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

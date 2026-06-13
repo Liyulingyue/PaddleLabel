@@ -1,76 +1,32 @@
-# -*- coding: utf-8 -*-
-import hashlib
-import uuid
-from pathlib import Path
+"""RPC routes - cache the frontend uses for interactor mask preview."""
 
-from fastapi import APIRouter, HTTPException, Query
+from __future__ import annotations
 
-router = APIRouter(prefix="/rpc", tags=["rpc"])
+import secrets
 
-_cache: dict[str, str] = {}
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-
-@router.post("/folders")
-def get_folders(body: dict):
-    folder_path = body.get("path", "")
-    if not folder_path:
-        return []
-
-    target = Path(folder_path).expanduser()
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-
-    result = []
-    for item in sorted(target.iterdir()):
-        if item.name.startswith("."):
-            continue
-        result.append({
-            "name": item.name,
-            "type": "dir" if item.is_dir() else "file",
-        })
-    return result
+router = APIRouter(prefix="/rpc", tags=["RPC"])
 
 
-@router.post("/seg/polygon2points")
-def polygon2points(body: dict):
-    polygon = body.get("polygon", "")
-    if not polygon:
-        return []
-
-    try:
-        coords = polygon.split(";")
-        points = []
-        for coord in coords:
-            x, y = coord.split(",")
-            points.append(f"{x},{y}")
-        return points
-    except:
-        raise HTTPException(status_code=500, detail="Invalid polygon format")
+# In-memory cache. Persisting to DB is overkill for short-lived interactor state.
+_CACHE: dict[str, str] = {}
 
 
-@router.post("/seg/points2polygon")
-def points2polygon(body: dict):
-    points_str = body.get("points", "")
-    if not points_str:
-        return []
-
-    try:
-        coords = points_str.split(";")
-        return [f"{x},{y}" for x, y in [c.split(",") for c in coords]]
-    except:
-        raise HTTPException(status_code=500, detail="Invalid points format")
-
-
-@router.post("/cache")
-def create_cache(body: dict):
-    content = body.get("content", "")
-    cache_id = hashlib.md5(f"{uuid.uuid4()}{content}".encode()).hexdigest()
-    _cache[cache_id] = content
-    return {"cache_id": cache_id}
+class CacheCreateBody(BaseModel):
+    content: str
 
 
 @router.get("/cache/{cache_id}")
-def get_cache(cache_id: str):
-    if cache_id not in _cache:
+async def get_cache(cache_id: str):
+    if cache_id not in _CACHE:
         raise HTTPException(status_code=404, detail="Cache not found")
-    return {"content": _cache[cache_id]}
+    return {"content": _CACHE[cache_id]}
+
+
+@router.post("/cache")
+async def create_cache(body: CacheCreateBody):
+    cache_id = secrets.token_urlsafe(16)
+    _CACHE[cache_id] = body.content
+    return {"cacheId": cache_id}

@@ -1,76 +1,39 @@
-# -*- coding: utf-8 -*-
-import os
-import shutil
+"""Sample routes + manage/version."""
+
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from fastapi import APIRouter
+from sqlalchemy import select
 
-from app.database import get_db, Project, TaskCategory
+from app import __version__
+from app.config import get_settings
+from app.database import DbSession
+from app.models.project import Project
 
-router = APIRouter(prefix="/samples", tags=["sample"])
-
-
-@router.post("")
-def load_sample(body: dict, db: Session = Depends(get_db)):
-    task_category_id = body.get("task_category_id")
-    if task_category_id is None:
-        raise HTTPException(status_code=500, detail="task_category_id is required")
-
-    tc = db.query(TaskCategory).filter(TaskCategory.task_category_id == task_category_id).first()
-    if tc is None:
-        raise HTTPException(status_code=404, detail=f"Task category {task_category_id} not found")
-
-    from paddlelabel import configs
-
-    sample_dir = configs.sample_dir
-    if not sample_dir.exists():
-        raise HTTPException(status_code=500, detail="Sample data not found")
-
-    return {"message": "Sample loading not implemented in FastAPI backend", "sample_dir": str(sample_dir)}
+router = APIRouter(tags=["Sample / Manage"])
 
 
-@router.get("/structure")
-def get_structure(path: str = Query(...), db: Session = Depends(get_db)):
-    from paddlelabel import configs
-
-    sample_dir = configs.sample_dir
-    target_path = sample_dir / path
-
-    if not target_path.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-
-    if target_path.is_file():
-        return [{"name": target_path.name, "type": "file"}]
-
-    result = []
-    for item in sorted(target_path.iterdir()):
-        result.append({
-            "name": item.name,
-            "type": "dir" if item.is_dir() else "file",
-        })
-    return result
+@router.get("/version")
+async def get_version() -> str:
+    return __version__
 
 
-@router.get("/file")
-def get_file(path: str = Query(...)):
-    from paddlelabel import configs
-
-    sample_dir = configs.sample_dir
-    target_path = sample_dir / path
-
-    if not target_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    return FileResponse(str(target_path))
-
-
-@router.get("/reset")
-def reset_samples(db: Session = Depends(get_db)):
-    from paddlelabel import configs
-
-    sample_dir = configs.sample_dir
-    if sample_dir.exists():
-        shutil.rmtree(str(sample_dir))
-    return {"message": "Samples reset"}
+@router.get("/samples")
+async def list_samples(db: DbSession):
+    res = await db.execute(select(Project))
+    out = []
+    for p in res.scalars().all():
+        settings = p.other_settings or {}
+        if settings.get("isSample"):
+            out.append(
+                {
+                    "project_id": p.project_id,
+                    "name": p.name,
+                    "description": p.description,
+                    "task_category_id": p.task_category_id,
+                }
+            )
+    return out

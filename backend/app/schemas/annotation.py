@@ -1,28 +1,10 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from app.schemas.base import CamelModel, TimestampedModel
+from app.schemas.label import LabelRead
 
 
-class BaseSchema(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class LabelSchema(BaseSchema):
-    label_id: int | None = None
-    project_id: int | None = None
-    id: int | None = None
-    name: str
-    color: str | None = None
-    comment: str | None = None
-    super_category_id: int | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class AnnotationBase(BaseModel):
+class AnnotationBase(CamelModel):
     frontend_id: int | None = None
     result: str | None = None
     type: str | None = None
@@ -41,11 +23,6 @@ class AnnotationUpdate(AnnotationBase):
     pass
 
 
-class AnnotationRead(AnnotationBase):
+class AnnotationRead(AnnotationBase, TimestampedModel):
     annotation_id: int | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
-    label: LabelSchema | None = None
-
-    class Config:
-        from_attributes = True
+    label: LabelRead | None = None

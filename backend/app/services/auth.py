@@ -1,27 +1,32 @@
-# -*- coding: utf-8 -*-
-import time
-from datetime import datetime, timedelta
+"""Token (JWT) issuing and decoding."""
 
-from jose import jwt, JWTError
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import jwt
 
 from app.config import get_settings
 
 
-def create_access_token(uuid: str) -> str:
-    settings = get_settings()
-    timestamp = int(time.time())
-    payload = {
-        "iss": settings.jwt_issuer,
-        "iat": timestamp,
-        "exp": timestamp + settings.jwt_lifetime_seconds,
-        "sub": uuid,
+def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
+    s = get_settings()
+    now = int(time.time())
+    payload: dict[str, Any] = {
+        "iss": "paddlelabel",
+        "iat": now,
+        "exp": now + s.jwt_lifetime_seconds,
+        "sub": subject,
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    if extra:
+        payload.update(extra)
+    return jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> dict:
-    settings = get_settings()
+def decode_access_token(token: str) -> dict[str, Any] | None:
+    s = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except JWTError:
+        return jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
+    except jwt.PyJWTError:
         return None

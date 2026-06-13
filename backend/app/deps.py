@@ -1,47 +1,58 @@
-# -*- coding: utf-8 -*-
+"""Shared FastAPI dependencies: auth, request id, etc."""
+
+from __future__ import annotations
+
 import time
 
-from fastapi import Depends, HTTPException, Header, status
-from sqlalchemy.orm import Session
+from fastapi import Depends, Header, HTTPException, status
 
-from app.database import get_db
+from app.config import get_settings
+from app.database import DbSession
+from app.models.user import User
 from app.services.auth import decode_access_token
-from app.database import User as UserModel
-
 
 _request_ids: list[tuple[float, str]] = []
+_REQUEST_TIMEOUT = 2.0
 
 
-def check_request_id(request_id: str | None = None):
-    if request_id is None or len(request_id) == 0:
+def check_request_id(request_id: str | None = Header(None, alias="X-Request-Id")):
+    """Reject duplicate requests inside a short window."""
+    if not request_id:
         return
+    now = time.time()
     global _request_ids
-    curr_time = time.time()
-    _request_ids = [(t, rid) for t, rid in _request_ids if curr_time - t < 2.0]
+    _request_ids = [(t, r) for t, r in _request_ids if now - t < _REQUEST_TIMEOUT]
     for ts, rid in _request_ids:
         if rid == request_id:
-            raise HTTPException(status_code=409, detail=f"Duplicate request from {curr_time - ts}s ago")
-    _request_ids.append((curr_time, request_id))
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Duplicate request from {now - ts:.1f}s ago",
+            )
+    _request_ids.append((now, request_id))
 
 
-def get_current_user(
-    db: Session = Depends(get_db),
+async def get_current_user(
+    db: DbSession,
     authorization: str | None = Header(None),
-) -> UserModel:
-    if authorization is None or not authorization.startswith("Bearer "):
+) -> User | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
         return None
-    token = authorization[7:]
+    token = authorization.split(None, 1)[1]
     payload = decode_access_token(token)
-    if payload is None:
+    if not payload:
         return None
     uuid = payload.get("sub")
-    if uuid is None:
+    if not uuid:
         return None
-    user = db.query(UserModel).filter(UserModel.uuid == uuid).first()
-    return user
+    from sqlalchemy import select
+
+    res = await db.execute(select(User).where(User.uuid == uuid))
+    return res.scalar_one_or_none()
 
 
-def require_auth(user: UserModel = Depends(get_current_user)) -> UserModel:
+async def require_user(
+    user: User | None = Depends(get_current_user),
+) -> User:
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

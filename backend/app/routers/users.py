@@ -1,92 +1,80 @@
-# -*- coding: utf-8 -*-
-import hashlib
-import uuid as uuid_lib
+"""User routes - login / logout / current user."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from __future__ import annotations
 
-from app.database import get_db, User
-from app.schemas.user import UserCreate, UserUpdate, UserRead, LoginRequest
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
+
+from app.database import DbSession
+from app.models.user import User
+from app.schemas.user import LoginRequest, UserRead
 from app.services.auth import create_access_token
+from app.services.password import hash_password, verify_password
 
 router = APIRouter(prefix="/users", tags=["User"])
 
 
-def _user_to_dict(u: User) -> dict:
+def _user_to_dict(user: User, token: str | None = None) -> dict:
     return {
-        "user_id": u.user_id,
-        "uuid": u.uuid,
-        "username": u.username,
-        "email": u.email,
-        "role_id": u.role_id,
-        "created": u.created,
-        "modified": u.modified,
+        "user_id": user.user_id,
+        "uuid": user.uuid,
+        "username": user.username,
+        "role": user.role,
+        "last_login": user.last_login,
+        "token": token,
     }
 
 
-@router.get("", response_model=list[UserRead])
-def list_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return [_user_to_dict(u) for u in users]
+@router.post("/login")
+async def login(body: LoginRequest, db: DbSession):
+    if not body.username or not body.password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+    res = await db.execute(select(User).where(User.username == body.username))
+    user = res.scalar_one_or_none()
+    if user is None or not verify_password(body.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    user.last_login = datetime.utcnow().isoformat()
+    await db.commit()
+    await db.refresh(user)
+    token = create_access_token(user.uuid)
+    return _user_to_dict(user, token)
 
 
-@router.post("", response_model=UserRead, status_code=201)
-def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.username == user_in.username).first()
-    if existing:
+@router.post("/logout")
+async def logout():
+    """Tokens are stateless - client just discards. Endpoint kept for API compatibility."""
+    return {"message": "Logged out"}
+
+
+@router.get("/current", response_model=None)
+async def current_user(db: DbSession, _user = None):
+    """Return the current user or null if not authenticated. Read-only, no auth required."""
+    if _user is None:
+        return None
+    return _user_to_dict(_user)
+
+
+@router.post("/register", response_model=UserRead, include_in_schema=False)
+async def register(body: dict, db: DbSession):
+    """Convenience: create the first user (no admin yet). No auth required."""
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+    res = await db.execute(select(User).where(User.username == username))
+    if res.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Username already exists")
+    import uuid
 
-    password_hash = hashlib.sha256((user_in.password or "default").encode()).hexdigest()
     user = User(
-        uuid=str(uuid_lib.uuid4()),
-        username=user_in.username,
-        email=user_in.email,
-        password=password_hash,
-        role_id=user_in.role_id or 0,
+        uuid=uuid.uuid4().hex,
+        username=username,
+        password=hash_password(password),
+        role=body.get("role", "user"),
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     return _user_to_dict(user)
-
-
-@router.get("/{uuid}")
-def get_user(uuid: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.uuid == uuid).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"No user with uuid {uuid}")
-    return _user_to_dict(user)
-
-
-@router.put("/{uuid}", response_model=UserRead)
-def update_user(uuid: str, user_in: UserUpdate, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.uuid == uuid).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"No user with uuid {uuid}")
-    for k, v in user_in.model_dump(exclude_unset=True).items():
-        if k == "password" and v:
-            v = hashlib.sha256(v.encode()).hexdigest()
-        setattr(user, k, v)
-    db.commit()
-    db.refresh(user)
-    return _user_to_dict(user)
-
-
-@router.delete("/{uuid}")
-def delete_user(uuid: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.uuid == uuid).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"No user with uuid {uuid}")
-    db.delete(user)
-    db.commit()
-    return {"message": f"User {uuid} deleted"}
-
-
-@router.post("/login")
-def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
-    user = db.query(User).filter(User.username == credentials.username, User.password == password_hash).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    token = create_access_token(user.uuid)
-    return token

@@ -1,35 +1,29 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from pydantic import AliasChoices, Field
+
+from app.schemas.base import CamelModel, TimestampedModel
 
 
-class BaseLabelSchema(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class LabelBase(BaseLabelSchema):
-    name: str
+class LabelBase(CamelModel):
+    name: str = Field(validation_alias=AliasChoices('name', 'Name'))
     color: str | None = None
     comment: str | None = None
     super_category_id: int | None = None
-    project_id: int | None = None
-    id: int | None = None
+    type: str | None = None
+    active: bool | None = True
 
 
 class LabelCreate(LabelBase):
-    pass
+    project_id: int | None = None
+    id: int | None = None
 
 
 class LabelUpdate(LabelBase):
-    pass
+    name: str | None = None
 
 
-class LabelRead(LabelBase):
+class LabelRead(LabelBase, TimestampedModel):
     label_id: int | None = None
     project_id: int | None = None
-    id: int | None = None
-    created: datetime | None = None
-    modified: datetime | None = None
-
-    class Config:
-        from_attributes = True
+    id: int | None = 0
