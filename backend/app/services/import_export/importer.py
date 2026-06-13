@@ -119,6 +119,10 @@ def _normalize_label_format(fmt: str, task_type: str) -> str:
         "imgClass": "imgClass",
         "clsList": "clsList",
         "labelTxt": "clsList",
+        "singleClassFolder": "imgClass",
+        "multiClassList": "clsList",
+        "singleClass": "imgClass",
+        "multiClass": "clsList",
         "voc": "voc",
         "yolo": "yolo",
         "coco": "coco",
@@ -141,14 +145,22 @@ async def _import_classification(
 
     if fmt == "imgClass":
         # <root>/<class>/<image>
-        for class_dir in sorted(root.iterdir()):
-            if not class_dir.is_dir() or class_dir.name.startswith("."):
-                continue
-            label = await _ensure_label(db, project, class_dir.name, label_name_to_obj)
-            for img in sorted(class_dir.iterdir()):
+        class_dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        if not class_dirs:
+            # No subdirs — treat all images in root as unlabeled single task
+            items = []
+            for img in sorted(root.iterdir()):
                 if img.is_file() and img.suffix.lower() in IMAGE_EXTENSIONS:
-                    rel = str(img.relative_to(root))
-                    await _add_classification_task(db, project, [(rel, [label.name])], 0, label_name_to_obj)
+                    items.append((str(img.relative_to(root)), []))
+            if items:
+                await _add_classification_task(db, project, items, 0, label_name_to_obj)
+        else:
+            for class_dir in sorted(class_dirs):
+                label = await _ensure_label(db, project, class_dir.name, label_name_to_obj)
+                for img in sorted(class_dir.iterdir()):
+                    if img.is_file() and img.suffix.lower() in IMAGE_EXTENSIONS:
+                        rel = str(img.relative_to(root))
+                        await _add_classification_task(db, project, [(rel, [label.name])], 0, label_name_to_obj)
     else:  # clsList
         result = classification.read(root)
         # Add labels
