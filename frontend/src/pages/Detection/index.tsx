@@ -103,10 +103,15 @@ export default function Detection() {
     annotationsRef.current = annotations;
   }, [annotations]);
 
+  useEffect(() => {
+    console.log('[Detection] annotations changed:', annotations.map(a => ({ id: a.annotationId, result: a.result, len: a.result?.split(',').length })));
+  }, [annotations]);
+
   const onAnnotationAdd = useCallback((anno: Annotation) => {
     annotationsRef.current = [...annotationsRef.current, anno];
     setAnnotations([...annotationsRef.current]);
     setSelectedAnnotation(anno);
+    console.log('[Detection] onAnnotationAdd:', anno.result, 'total:', annotationsRef.current.length);
   }, []);
 
   const onAnnotationModify = useCallback(async (anno: Annotation) => {

@@ -157,6 +157,7 @@ async def create_project(body: ProjectCreate, db: DbSession):
         await db.commit()
     write_warning(data_dir)
 
+    project_id = project.project_id
     try:
         await import_project(
             db,
@@ -165,8 +166,7 @@ async def create_project(body: ProjectCreate, db: DbSession):
         )
     except Exception as exc:
         await db.rollback()
-        # re-fetch and delete
-        proj = await db.get(Project, project.project_id)
+        proj = await db.get(Project, project_id)
         if proj is not None:
             await db.delete(proj)
             await db.commit()

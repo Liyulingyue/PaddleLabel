@@ -41,7 +41,7 @@ export default function AppLayout() {
           <Dropdown menu={{ items: langItems, onClick: ({ key }) => i18n.changeLanguage(key) }} placement="bottomRight">
             <Button icon={<GlobalOutlined />}>{langLabel}</Button>
           </Dropdown>
-          <Dropdown menu={{ items: createItems, onClick: ({ key }) => navigate(`/project/create`) }} placement="bottomRight">
+          <Dropdown menu={{ items: createItems, onClick: ({ key }) => navigate(`/project/create?taskCategory=${key}`) }} placement="bottomRight">
             <Button type="primary" icon={<PlusOutlined />}>
               {t('pages.welcome.createProject')}
             </Button>

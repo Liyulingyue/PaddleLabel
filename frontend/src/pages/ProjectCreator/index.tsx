@@ -125,7 +125,7 @@ export default function ProjectCreator() {
 
   useEffect(() => {
     if (projectId) return;
-    form.setFieldValue('labelFormat', undefined);
+    form.setFieldsValue({ taskCategory, labelFormat: undefined });
     setSampleFiles([]);
   }, [taskCategory]);
 
@@ -134,6 +134,7 @@ export default function ProjectCreator() {
   };
 
   const handleLabelFormatChange = (format: string) => {
+    if (!format) return;
     const samplePath = `bear/${taskCategory}/${format}/`;
     fetch(`/api/samples/structure?path=${encodeURIComponent(samplePath)}`)
       .then(res => res.json())

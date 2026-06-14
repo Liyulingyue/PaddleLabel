@@ -265,6 +265,21 @@ async def _add_classification_task(
             ann.task_id = task.task_id
 
 
+async def _import_images_as_tasks(db: AsyncSession, project: Project, root: Path) -> None:
+    """Import all images in root as separate tasks with no annotations (for blank-slate detection)."""
+    for img_path in sorted(root.iterdir()):
+        if not img_path.is_file():
+            continue
+        ext = img_path.suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            continue
+        task = Task(project_id=project.project_id, set=0)
+        d = Data(path=img_path.name)
+        task.datas.append(d)
+        db.add(task)
+    await db.commit()
+
+
 # ─── detection ──────────────────────────────────────────────────────────────
 
 
@@ -277,23 +292,38 @@ async def _import_detection(
         items, names, splits = detection.read_voc(root)
         for n in names:
             await _ensure_label(db, project, n, label_cache)
-        await _import_voc_items(db, project, items, splits, label_cache)
+        if items:
+            await _import_voc_items(db, project, items, splits, label_cache)
+        else:
+            await _import_images_as_tasks(db, project, root)
     elif fmt == "yolo":
         items, names, splits = detection.read_yolo(root)
-        # Re-read yolo with project labels
-        await _import_yolo_items(db, project, items, names, splits, label_cache)
+        for n in names:
+            await _ensure_label(db, project, n, label_cache)
+        if items:
+            await _import_yolo_items(db, project, items, names, splits, label_cache)
+        else:
+            await _import_images_as_tasks(db, project, root)
     elif fmt == "coco":
         coco, splits = detection.read_coco(root)
         for cat in coco.get("categories", []):
             await _ensure_label(db, project, cat.get("name", f"class_{cat.get('id')}"), label_cache)
-        await _import_coco_items(db, project, coco, splits, label_cache)
+        if coco.get("images"):
+            await _import_coco_items(db, project, coco, splits, label_cache)
+        else:
+            await _import_images_as_tasks(db, project, root)
     else:
         raise ValueError(f"Unknown detection format: {fmt}")
 
 
 async def _import_voc_items(db, project, items, splits, label_cache):
-    name_to_label = {l.name: l for l in project.labels}
-    # Build image_path -> set map
+    if not items:
+        return
+    name_to_label = {lab.name: lab for lab in label_cache.values()}
+    id_to_label: dict[int, Label] = {}
+    for id_, name in enumerate(name_to_label):
+        id_to_label[id_] = name_to_label[name]
+
     img_to_set: dict[str, int] = {}
     for set_idx, paths in splits.items():
         for p in paths:
@@ -328,8 +358,8 @@ async def _import_voc_items(db, project, items, splits, label_cache):
 
 
 async def _import_yolo_items(db, project, items, names, splits, label_cache):
-    # names = full ordered list of class names (read from classes.names)
-    # If a class name is missing in project labels, create it.
+    if not items:
+        return
     id_to_label: dict[int, Label] = {}
     for i, n in enumerate(names):
         lab = await _ensure_label(db, project, n, label_cache)
@@ -348,9 +378,6 @@ async def _import_yolo_items(db, project, items, names, splits, label_cache):
             lab = id_to_label.get(cls)
             if lab is None:
                 continue
-            # convert YOLO cxcywh-normalized to VOC xywh (assume image size unknown; we keep it as xywh assuming
-            # image dims are 1.0x1.0 normalized — caller can post-process).
-            # Better: store as normalized bbox in result so the canvas can draw it.
             d.annotations.append(
                 Annotation(
                     project_id=project.project_id,
@@ -402,6 +429,8 @@ async def _import_coco_items(db, project, coco, splits, label_cache):
     for ann in coco.get("annotations", []):
         img_to_anns.setdefault(ann["image_id"], []).append(ann)
 
+    if not img_id_to_meta:
+        return
     for img_id, meta in img_id_to_meta.items():
         path = meta.get("file_name", "")
         set_idx = img_to_set.get(Path(path).name, img_to_set.get(path, 0))
@@ -511,6 +540,8 @@ async def _import_instance_segmentation(
         for set_idx, paths in splits.items():
             for p in paths:
                 img_to_set[Path(p).stem] = set_idx
+        if not items:
+            return
         for item in items:
             set_idx = img_to_set.get(Path(item.image).stem, 0)
             task = Task(project_id=project.project_id, set=set_idx)
@@ -556,6 +587,8 @@ async def _import_ocr(
     for set_idx, paths in splits.items():
         for p in paths:
             img_to_set[Path(p).name] = set_idx
+    if not items:
+        return
     for item in items:
         set_idx = img_to_set.get(Path(item.image).name, 0)
         task = Task(project_id=project.project_id, set=set_idx)

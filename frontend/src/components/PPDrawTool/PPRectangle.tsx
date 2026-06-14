@@ -133,6 +133,7 @@ export default function PPRectangle(props: PPDrawToolProps): PPDrawToolRet {
   };
 
   const addDotToRectangle = (mouseX: number, mouseY: number, pathName?: string, pointIndex = 2) => {
+    console.log('[PPRectangle] addDotToRectangle currentAnnotation:', props.currentAnnotation?.result, 'label color:', props.currentLabel?.color);
     if (!props.currentAnnotation || !props.currentAnnotation.result || !props.currentLabel?.color) return;
     let result = '';
     if (pathName === '/project/:id/label/ocr') {
@@ -181,6 +182,7 @@ export default function PPRectangle(props: PPDrawToolProps): PPDrawToolRet {
   };
 
   const OnMouseUp = (param: EvtProps) => {
+    console.log('[PPRectangle] OnMouseUp currentTool:', props.currentTool, 'isClick:', isClick, 'pointIndex:', param.pointIndex);
     if (props.currentTool !== 'rectangle' && props.currentTool !== 'editor' && isClick) return;
     isClick = false;
     const mouseX = param.mouseX;

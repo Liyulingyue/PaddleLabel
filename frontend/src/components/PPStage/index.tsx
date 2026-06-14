@@ -190,6 +190,7 @@ const PPStage = forwardRef<pageRef, PPStageProps>((props, ref) => {
   }, []);
 
   const renderShape = useCallback(() => {
+    console.log('[PPStage] renderShape called, annotations:', props.annotations?.length, 'currentAnnotation:', props.currentAnnotation?.result);
     const newShapes: React.ReactElement[] = [];
     const param: PPRenderFuncProps = {
       annotation: {} as Annotation,
@@ -237,6 +238,7 @@ const PPStage = forwardRef<pageRef, PPStageProps>((props, ref) => {
       }
       if (shape && shape.key !== null) newShapes.push(shape);
     });
+    console.log('[PPStage] setShapes with', newShapes.length, 'shapes, canvas size:', canvasRef.current?.width, 'x', canvasRef.current?.height);
     setShapes(newShapes);
   }, [props.annotations, props.currentAnnotation, flags, props.currentTool, props.hideLabel, props.scale, transparency]);
 
@@ -247,6 +249,7 @@ const PPStage = forwardRef<pageRef, PPStageProps>((props, ref) => {
 
   useEffect(() => {
     if (props.annotations) {
+      console.log('[PPStage] annotations effect fired, frist:', frist, 'canvas:', canvasRef.current?.width, 'x', canvasRef.current?.height);
       const ctx = canvasRef.current?.getContext('2d', { willReadFrequently: true });
       const ctx2 = canvasRef2.current?.getContext('2d', { willReadFrequently: true });
       const ctx3 = canvasRef3.current?.getContext('2d', { willReadFrequently: true });
@@ -424,9 +427,9 @@ const PPStage = forwardRef<pageRef, PPStageProps>((props, ref) => {
 
   return (
     <div data-test-id="stage-container" data-label-length={props.annotations?.length || 0} data-image-src={props.imgSrc}>
-      <canvas style={{ display: 'none' }} ref={canvasRef} width={imageWidth} height={imageHeight} />
-      <canvas style={{ display: 'none' }} ref={canvasRef2} width={imageWidth} height={imageHeight} />
-      <canvas style={{ display: 'none' }} ref={canvasRef3} width={imageWidth} height={imageHeight} />
+      <canvas style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }} ref={canvasRef} width={imageWidth} height={imageHeight} />
+      <canvas style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }} ref={canvasRef2} width={imageWidth} height={imageHeight} />
+      <canvas style={{ opacity: 0, position: 'absolute', pointerEvents: 'none' }} ref={canvasRef3} width={imageWidth} height={imageHeight} />
 
       <Stage
         width={canvasWidth}
